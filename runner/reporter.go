@@ -280,7 +280,7 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 				return l.Percentage == 99
 			})
 			var p99 float64
-			if idx != -1 {
+			if idx == -1 {
 				p99 = slowestNum
 			} else {
 				p99 = rep.LatencyDistribution[idx].Latency.Seconds()
