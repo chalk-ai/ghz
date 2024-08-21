@@ -344,7 +344,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 	const data = [
 		{{ range .Histogram }}
-			{ name: {{ .AlternativeMark }}, value: {{ .Count }} },
+			{ name: "{{ .AlternativeMark }}", value: {{ .Count }} },
 		{{ end }}
 	];
 
@@ -380,6 +380,13 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 				.on('customMouseOut', tooltip.hide);
 
 			barChart.orderingFunction(function(a, b) {
+				if (a.name.startsWith(">=P99")) {
+					return -1;
+				}
+				if (b.name.startsWith(">=P99")) {
+					return 1;
+				}
+
 				var nA = a.name.replace(/ms/gi, '');
 				var nB = b.name.replace(/ms/gi, '');
 
