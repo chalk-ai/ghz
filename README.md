@@ -1,10 +1,12 @@
+Fork of the [excellent ghz package](https://github.com/bojand/ghz/tree/master) with some modifications. This version improves the histogram in the report.
+
+# ghz
+
 <div align="center">
 	<br>
 	<img src="green_fwd2.svg" alt="Logo" width="100">
 	<br>
 </div>
-
-# ghz
 
 [![Release](https://img.shields.io/github/release/bojand/ghz.svg?style=flat-square)](https://github.com/bojand/ghz/releases/latest)
 ![Build Status](https://github.com/bojand/ghz/workflows/build/badge.svg)
