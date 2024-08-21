@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"time"
 )
@@ -122,6 +123,9 @@ type LatencyDistribution struct {
 type Bucket struct {
 	// The Mark for histogram bucket in seconds
 	Mark float64 `json:"mark"`
+
+	// The Mark for histogram bucket in seconds
+	AlternativeMark string `json:"mark"`
 
 	// The count in the bucket
 	Count int `json:"count"`
@@ -270,8 +274,9 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 
 			rep.Fastest = time.Duration(fastestNum * float64(time.Second))
 			rep.Slowest = time.Duration(slowestNum * float64(time.Second))
-			rep.Histogram = histogram(okLats, slowestNum, fastestNum)
 			rep.LatencyDistribution = latencies(okLats)
+			p99 := rep.LatencyDistribution[6].Latency.Seconds()
+			rep.Histogram = histogram(okLats, slowestNum, fastestNum, p99)
 		}
 
 		rep.Details = r.details
@@ -312,7 +317,14 @@ func latencies(latencies []float64) []LatencyDistribution {
 	return res
 }
 
-func histogram(latencies []float64, slowest, fastest float64) []Bucket {
+func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Bucket {
+	formatMark := func(mark float64) string {
+		return fmt.Sprintf("%.3f", mark*1000)
+	}
+	cleanTail := slowest > p99*10
+	if cleanTail {
+		slowest = p99
+	}
 	bc := 10
 	buckets := make([]float64, bc+1)
 	counts := make([]int, bc+1)
@@ -342,5 +354,6 @@ func histogram(latencies []float64, slowest, fastest float64) []Bucket {
 			Frequency: float64(counts[i]) / float64(len(latencies)),
 		}
 	}
+	res[bc-1].AlternativeMark = fmt.Sprintf(">P99 [%s-%s]", formatMark(p99), formatMark(slowest))
 	return res
 }

@@ -29,13 +29,13 @@ type ReportPrinter struct {
 //
 // Supported Format:
 //
-// 		summary
-// 		csv
-// 		json
-// 		pretty
-// 		html
-// 		influx-summary
-// 		influx-details
+//	summary
+//	csv
+//	json
+//	pretty
+//	html
+//	influx-summary
+//	influx-details
 func (rp *ReportPrinter) Print(format string) error {
 	if format == "" {
 		format = "summary"
@@ -179,7 +179,12 @@ func histogram(buckets []runner.Bucket) string {
 		if maxCount > 0 {
 			barLen = (buckets[i].Count*40 + maxCount/2) / maxCount
 		}
-		markStr := formatMark(buckets[i].Mark)
+		var markStr string
+		if buckets[i].AlternativeMark == "" {
+			markStr = formatMark(buckets[i].Mark)
+		} else {
+			markStr = buckets[i].AlternativeMark
+		}
 		countStr := formatCount(buckets[i].Count)
 		res.WriteString(fmt.Sprintf(
 			"  %s%s [%v]%s |%v\n",
