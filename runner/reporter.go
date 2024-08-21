@@ -336,13 +336,13 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 		graphSlowest = p99
 	}
 	bc := 10
-	buckets := make([]float64, bc+1)
-	counts := make([]int, bc+1)
+	buckets := make([]float64, bc)
+	counts := make([]int, bc)
 	bs := (graphSlowest - fastest) / float64(bc)
 	for i := 0; i < bc; i++ {
 		buckets[i] = fastest + bs*float64(i)
 	}
-	buckets[bc] = graphSlowest
+	buckets[bc-1] = graphSlowest
 	var bi int
 	var maxV int
 	for i := 0; i < len(latencies); {
@@ -354,6 +354,9 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 			}
 		} else if bi < len(buckets)-1 {
 			bi++
+		} else {
+			i++
+			counts[bi-1]++
 		}
 	}
 	res := make([]Bucket, len(buckets))
@@ -366,7 +369,7 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 		}
 	}
 	if cleanTail {
-		res[bc].AlternativeMark = fmt.Sprintf(">=P99 [%s-%s]", formatMark(p99), formatMark(slowest))
+		res[bc-1].AlternativeMark = fmt.Sprintf(">=P99 [%s-%s]", formatMark(p99), formatMark(slowest))
 	}
 	return res
 }
