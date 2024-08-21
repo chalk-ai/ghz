@@ -364,7 +364,7 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 		}
 	}
 	if cleanTail {
-		res[bc].AlternativeMark = fmt.Sprintf(">P99 [%s-%s]", formatMark(p99), formatMark(slowest))
+		res[bc].AlternativeMark = fmt.Sprintf(">P99 (%s-%s]", formatMark(p99), formatMark(slowest))
 	}
 	return res
 }
