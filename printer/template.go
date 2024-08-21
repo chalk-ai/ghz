@@ -344,7 +344,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 	const data = [
 		{{ range .Histogram }}
-			{ name: {{ formatMark .Mark }}, value: {{ .Count }} },
+			{ name: {{ .AlternativeMark }}, value: {{ .Count }} },
 		{{ end }}
 	];
 
