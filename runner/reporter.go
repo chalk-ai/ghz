@@ -126,7 +126,7 @@ type Bucket struct {
 	Mark float64 `json:"mark"`
 
 	// The Mark for histogram bucket in seconds
-	AlternativeMark string `json:"mark"`
+	AlternativeMark string `json:"alternative_mark"`
 
 	// The count in the bucket
 	Count int `json:"count"`
