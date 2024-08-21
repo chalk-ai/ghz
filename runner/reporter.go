@@ -330,7 +330,7 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 	formatMark := func(mark float64) string {
 		return fmt.Sprintf("%.3f", mark*1000)
 	}
-	cleanTail := slowest > p99*10
+	cleanTail := slowest > p99*1.5
 	if cleanTail {
 		slowest = p99
 	}
