@@ -126,7 +126,7 @@ type Bucket struct {
 	Mark float64 `json:"mark"`
 
 	// The Mark for histogram bucket in seconds
-	AlternativeMark string `json:"mark"`
+	AlternativeMark string `json:"alternative_mark"`
 
 	// The count in the bucket
 	Count int `json:"count"`
@@ -327,7 +327,7 @@ func latencies(latencies []float64) []LatencyDistribution {
 }
 
 func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Bucket {
-	cleanTail := len(latencies) > 500
+	cleanTail := len(latencies) > 200
 	formatMark := func(mark float64) string {
 		return fmt.Sprintf("%.3f", mark*1000)
 	}
