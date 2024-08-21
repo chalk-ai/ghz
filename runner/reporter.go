@@ -3,6 +3,7 @@ package runner
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 )
@@ -275,7 +276,15 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 			rep.Fastest = time.Duration(fastestNum * float64(time.Second))
 			rep.Slowest = time.Duration(slowestNum * float64(time.Second))
 			rep.LatencyDistribution = latencies(okLats)
-			p99 := rep.LatencyDistribution[6].Latency.Seconds()
+			idx := slices.IndexFunc(rep.LatencyDistribution, func(l LatencyDistribution) bool {
+				return l.Percentage == 99
+			})
+			var p99 float64
+			if idx != -1 {
+				p99 = slowestNum
+			} else {
+				p99 = rep.LatencyDistribution[idx].Latency.Seconds()
+			}
 			rep.Histogram = histogram(okLats, slowestNum, fastestNum, p99)
 		}
 
