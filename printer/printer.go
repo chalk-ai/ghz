@@ -170,7 +170,7 @@ func histogram(buckets []runner.Bucket) string {
 		return fmt.Sprintf("%v", count)
 	}
 
-	maxMarkLen := len(formatMark(maxMark))
+	maxMarkLen := max(len(formatMark(maxMark)), len(buckets[len(buckets)-1].AlternativeMark))
 	maxCountLen := len(formatCount(maxCount))
 	res := new(bytes.Buffer)
 	for i := 0; i < len(buckets); i++ {
@@ -184,9 +184,6 @@ func histogram(buckets []runner.Bucket) string {
 			markStr = formatMark(buckets[i].Mark)
 		} else {
 			markStr = buckets[i].AlternativeMark
-			if len(buckets[i].AlternativeMark) > maxMarkLen {
-				maxMarkLen = len(buckets[i].AlternativeMark)
-			}
 		}
 		countStr := formatCount(buckets[i].Count)
 		res.WriteString(fmt.Sprintf(

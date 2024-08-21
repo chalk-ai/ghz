@@ -354,6 +354,6 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 			Frequency: float64(counts[i]) / float64(len(latencies)),
 		}
 	}
-	res[bc-1].AlternativeMark = fmt.Sprintf(">P99 [%s-%s]", formatMark(p99), formatMark(slowest))
+	res[bc].AlternativeMark = fmt.Sprintf(">P99 [%s-%s]", formatMark(p99), formatMark(slowest))
 	return res
 }
