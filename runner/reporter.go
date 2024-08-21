@@ -327,10 +327,10 @@ func latencies(latencies []float64) []LatencyDistribution {
 }
 
 func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Bucket {
+	cleanTail := len(latencies) > 500
 	formatMark := func(mark float64) string {
 		return fmt.Sprintf("%.3f", mark*1000)
 	}
-	cleanTail := slowest > p99*1.5
 	if cleanTail {
 		slowest = p99
 	}
@@ -358,13 +358,14 @@ func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 	res := make([]Bucket, len(buckets))
 	for i := 0; i < len(buckets); i++ {
 		res[i] = Bucket{
-			Mark:      buckets[i],
-			Count:     counts[i],
-			Frequency: float64(counts[i]) / float64(len(latencies)),
+			Mark:            buckets[i],
+			AlternativeMark: formatMark(buckets[i]),
+			Count:           counts[i],
+			Frequency:       float64(counts[i]) / float64(len(latencies)),
 		}
 	}
 	if cleanTail {
-		res[bc].AlternativeMark = fmt.Sprintf(">P99 (%s-%s]", formatMark(p99), formatMark(slowest))
+		res[bc].AlternativeMark = fmt.Sprintf(">=P99 [%s-%s]", formatMark(p99), formatMark(slowest))
 	}
 	return res
 }

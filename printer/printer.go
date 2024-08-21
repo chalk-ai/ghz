@@ -179,12 +179,7 @@ func histogram(buckets []runner.Bucket) string {
 		if maxCount > 0 {
 			barLen = (buckets[i].Count*40 + maxCount/2) / maxCount
 		}
-		var markStr string
-		if buckets[i].AlternativeMark == "" {
-			markStr = formatMark(buckets[i].Mark)
-		} else {
-			markStr = buckets[i].AlternativeMark
-		}
+		markStr := buckets[i].AlternativeMark
 		countStr := formatCount(buckets[i].Count)
 		res.WriteString(fmt.Sprintf(
 			"  %s%s [%v]%s |%v\n",
