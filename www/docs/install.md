@@ -5,7 +5,7 @@ title: Installation
 
 ## Download
 
-1. Download a prebuilt executable binary for your operating system from the [GitHub releases page](https://github.com/bojand/ghz/releases).
+1. Download a prebuilt executable binary for your operating system from the [GitHub releases page](https://github.com/chalk-ai/ghz/releases).
 2. Unzip the archive and place the executable binary wherever you would like to run it from. Additionally consider adding the location directory in the `PATH` variable if you would like the `ghz` command to be available everywhere.
 
 ## Homebrew
@@ -19,7 +19,7 @@ brew install ghz
 **Clone**
 
 ```sh
-git clone https://github.com/bojand/ghz
+git clone https://github.com/chalk-ai/ghz
 ```
 
 **Build using make**

@@ -1,4 +1,4 @@
-module github.com/bojand/ghz
+module github.com/chalk-ai/ghz
 
 go 1.18
 

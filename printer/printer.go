@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/template"
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/runner"
 )
 
 const (

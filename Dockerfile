@@ -42,7 +42,7 @@ RUN \
     --mount=from=osmap,source=/os,target=/os <<EOF
 set -eux
 apk add --no-cache curl
-export url=https://github.com/bojand/ghz/releases
+export url=https://github.com/chalk-ai/ghz/releases
 export arch=x86_64
 if [ "${VERSION:-}" = '' ]; then
     export VERSION=$( ( curl -#fSLo /dev/null -w '%{url_effective}' $url/latest && echo ) | while read -r x; do basename $x; done)

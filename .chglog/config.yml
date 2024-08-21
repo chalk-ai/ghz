@@ -2,7 +2,7 @@ style: github
 template: CHANGELOG.tpl.md
 info:
   title: CHANGELOG
-  repository_url: https://github.com/bojand/ghz
+  repository_url: https://github.com/chalk-ai/ghz
 options:
   commits:
     filters:

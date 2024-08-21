@@ -131,14 +131,14 @@ class Index extends React.Component {
 
     const Badges = () => (
       <div className="productShowcaseSection" style={{ textAlign: 'center' }}>
-          <a href={"https://github.com/bojand/ghz/releases/latest"}>
+          <a href={"https://github.com/chalk-ai/ghz/releases/latest"}>
             <img src={"https://img.shields.io/github/release/bojand/ghz.svg?style=flat-square"} alt={"Release"} />
           </a>
-          <a href={"https://github.com/bojand/ghz/actions?workflow=build"} style={{ margin: '5px' }}>
-            <img src={"https://github.com/bojand/ghz/workflows/build/badge.svg"} alt={"Build status"} />
+          <a href={"https://github.com/chalk-ai/ghz/actions?workflow=build"} style={{ margin: '5px' }}>
+            <img src={"https://github.com/chalk-ai/ghz/workflows/build/badge.svg"} alt={"Build status"} />
           </a>
-          <a href={"https://goreportcard.com/report/github.com/bojand/ghz"}>
-            <img src={"https://goreportcard.com/badge/github.com/bojand/ghz?style=flat-square"} alt={"Go Report Card"} />
+          <a href={"https://goreportcard.com/report/github.com/chalk-ai/ghz"}>
+            <img src={"https://goreportcard.com/badge/github.com/chalk-ai/ghz?style=flat-square"} alt={"Go Report Card"} />
           </a>
           <a href={"https://raw.githubusercontent.com/bojand/ghz/master/LICENSE"} style={{ margin: '5px' }}>
             <img src={"https://img.shields.io/github/license/bojand/ghz.svg?style=flat-square"} alt={"License"} />

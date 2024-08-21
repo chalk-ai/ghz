@@ -15,8 +15,8 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/bojand/ghz/printer"
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/printer"
+	"github.com/chalk-ai/ghz/runner"
 )
 
 var (

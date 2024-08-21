@@ -15,7 +15,7 @@ export default class Footer extends Component {
         flexDirection='column'
         minHeight={120}>
         <Pane maxHeight={30} maxWidth={30} marginBottom={10}>
-          <Link href='https://github.com/bojand/ghz'>
+          <Link href='https://github.com/chalk-ai/ghz'>
             <GitHubIcon />
           </Link>
         </Pane>

@@ -8,8 +8,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/bojand/ghz/internal"
-	"github.com/bojand/ghz/internal/helloworld"
+	"github.com/chalk-ai/ghz/internal"
+	"github.com/chalk-ai/ghz/internal/helloworld"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/google/uuid"

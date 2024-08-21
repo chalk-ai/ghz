@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/runner"
 	"github.com/stretchr/testify/assert"
 )
 

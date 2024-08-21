@@ -32,7 +32,7 @@ export default class InfoComponent extends Component {
           </Link>
         </Paragraph>
         <Paragraph>
-          <Link href='https://github.com/bojand/ghz' target='_blank'>
+          <Link href='https://github.com/chalk-ai/ghz' target='_blank'>
             Github
           </Link>
         </Paragraph>

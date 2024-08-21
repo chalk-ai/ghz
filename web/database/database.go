@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bojand/ghz/web/model"
+	"github.com/chalk-ai/ghz/web/model"
 	"github.com/jinzhu/gorm"
 
 	_ "github.com/jinzhu/gorm/dialects/mysql"    // enable the mysql dialect

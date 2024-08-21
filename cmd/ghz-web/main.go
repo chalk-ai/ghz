@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bojand/ghz/web/api"
-	"github.com/bojand/ghz/web/config"
-	"github.com/bojand/ghz/web/database"
-	"github.com/bojand/ghz/web/router"
+	"github.com/chalk-ai/ghz/web/api"
+	"github.com/chalk-ai/ghz/web/config"
+	"github.com/chalk-ai/ghz/web/database"
+	"github.com/chalk-ai/ghz/web/router"
 )
 
 var (

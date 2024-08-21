@@ -75,6 +75,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Build image
-      run: docker build https://github.com/bojand/ghz.git
+      run: docker build https://github.com/chalk-ai/ghz.git
       env:
         DOCKER_BUILDKIT: '1'

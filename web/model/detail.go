@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/runner"
 )
 
 // Detail represents a report detail

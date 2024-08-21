@@ -3,9 +3,9 @@ id: intro
 title: Introduction
 ---
 
-[![Release](https://img.shields.io/github/release/bojand/ghz.svg?style=flat-square)](https://github.com/bojand/ghz/releases/latest) 
-![Build Status](https://github.com/bojand/ghz/workflows/build/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/bojand/ghz?style=flat-square)](https://goreportcard.com/report/github.com/bojand/ghz)
+[![Release](https://img.shields.io/github/release/bojand/ghz.svg?style=flat-square)](https://github.com/chalk-ai/ghz/releases/latest) 
+![Build Status](https://github.com/chalk-ai/ghz/workflows/build/badge.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/chalk-ai/ghz?style=flat-square)](https://goreportcard.com/report/github.com/chalk-ai/ghz)
 [![License](https://img.shields.io/github/license/bojand/ghz.svg?style=flat-square)](https://raw.githubusercontent.com/bojand/ghz/master/LICENSE)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg?style=flat-square)](https://www.paypal.me/bojandj)
 [![Buy me a coffee](https://img.shields.io/badge/buy%20me-a%20coffee-orange.svg?style=flat-square)](https://www.buymeacoffee.com/bojand)

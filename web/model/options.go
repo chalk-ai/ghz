@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/runner"
 	"github.com/jinzhu/gorm"
 )
 

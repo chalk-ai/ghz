@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bojand/ghz/printer"
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/printer"
+	"github.com/chalk-ai/ghz/runner"
 )
 
 // ExampleRun demonstrates how to use runner package to perform a gRPC load test programmatically.

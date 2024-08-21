@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bojand/ghz/runner"
+	"github.com/chalk-ai/ghz/runner"
 	promtypes "github.com/prometheus/client_model/go"
 	expfmt "github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"

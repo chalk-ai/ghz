@@ -3,7 +3,7 @@ package database
 import (
 	"sync/atomic"
 
-	"github.com/bojand/ghz/web/model"
+	"github.com/chalk-ai/ghz/web/model"
 )
 
 // ListAllDetailsForReport lists all details for report

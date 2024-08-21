@@ -20,8 +20,8 @@ const siteConfig = {
   headerLinks: [
     { doc: 'intro', label: 'CLI'},
     { doc: 'web/intro', label: 'Web'},
-    { href: "https://godoc.org/github.com/bojand/ghz", label: "GoDoc" },
-    { href: "https://github.com/bojand/ghz", label: "GitHub" }
+    { href: "https://godoc.org/github.com/chalk-ai/ghz", label: "GoDoc" },
+    { href: "https://github.com/chalk-ai/ghz", label: "GitHub" }
   ],
 
   // If you have users set above, you add it here:
@@ -67,7 +67,7 @@ const siteConfig = {
 
   // You may provide arbitrary config keys to be used as needed by your
   // template. For example, if you need your repo's URL...
-  repoUrl: 'https://github.com/bojand/ghz',
+  repoUrl: 'https://github.com/chalk-ai/ghz',
 };
 
 module.exports = siteConfig;
