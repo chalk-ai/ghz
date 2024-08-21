@@ -184,6 +184,9 @@ func histogram(buckets []runner.Bucket) string {
 			markStr = formatMark(buckets[i].Mark)
 		} else {
 			markStr = buckets[i].AlternativeMark
+			if len(buckets[i].AlternativeMark) > maxMarkLen {
+				maxMarkLen = len(buckets[i].AlternativeMark)
+			}
 		}
 		countStr := formatCount(buckets[i].Count)
 		res.WriteString(fmt.Sprintf(
