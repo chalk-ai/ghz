@@ -78,6 +78,23 @@ type Options struct {
 	CountErrors bool `json:"count-errors,omitempty"`
 }
 
+// Aggs
+type DataPointAgg struct {
+	P50 float64 `json:"p50"`
+	P95 float64 `json:"p95"`
+	P99 float64 `json:"p99"`
+}
+
+type DataPoint struct {
+	X float64      `json:"x"`
+	Y DataPointAgg `json:"y"`
+}
+
+type DataPointRPS struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
 // Report holds the data for the full test
 type Report struct {
 	Name      string     `json:"name,omitempty"`
@@ -98,6 +115,12 @@ type Report struct {
 	LatencyDistribution []LatencyDistribution `json:"latencyDistribution"`
 	Histogram           []Bucket              `json:"histogram"`
 	Details             []ResultDetail        `json:"details"`
+
+	Aggs []DataPoint
+	RPS  []DataPointRPS
+	P50  bool
+	P95  bool
+	P99  bool
 
 	Tags map[string]string `json:"tags,omitempty"`
 }
