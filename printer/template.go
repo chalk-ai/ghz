@@ -35,8 +35,10 @@ duration (ms),status,error{{ range $i, $v := .Details }}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ghz{{ if .Name }} - {{ .Name }}{{end}}</title>
     <script src="https://d3js.org/d3.v5.min.js"></script>
-		<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/britecharts@3/dist/bundled/britecharts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/britecharts@3/dist/css/britecharts.min.css" type="text/css" /></head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
@@ -79,6 +81,14 @@ duration (ms),status,error{{ range $i, $v := .Details }}
                 <i class="fas fa-chart-bar" aria-hidden="true"></i>
               </span>
               <span>Histogram</span>
+            </a>
+          </li>
+      	  <li>
+            <a href="#rps">
+              <span class="icon is-small">
+                <i class="fas fa-chart-bar" aria-hidden="true"></i>
+              </span>
+              <span> RPS </span>
             </a>
           </li>
           <li>
@@ -201,6 +211,16 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 				</a>
 				<p>
 					<div class="js-bar-container"></div>
+				</p>
+			</div>
+	  </div>
+		<div class="container">
+			<div class="content">
+				<a name="rps">
+					<h3> RPS </h3>
+				</a>
+				<p>
+					<canvas id="js-rps-container"></canvas>
 				</p>
 			</div>
 	  </div>
@@ -407,32 +427,96 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 			tooltipContainer.datum([]).call(tooltip);
 		}
 	}
+	function createRPSChart() {
+	    let timestamps = rawData.map((item) => {
+	        return Date.parse(item["timestamp"])
+	    }).sort();
 
-	function setJSONDownloadLink () {
-		var filename = "data.json";
-		var btn = document.getElementById('dlJSON');
-		var jsonData = JSON.stringify(rawData)
-		var blob = new Blob([jsonData], { type: 'text/json;charset=utf-8;' });
-		var url = URL.createObjectURL(blob);
-		btn.setAttribute("href", url);
-		btn.setAttribute("download", filename);
-	}
+	    let rps = [];
+	    let target = timestamps[0] + 1000;
+	    let count = 0
 
-	function setCSVDownloadLink () {
-		var filename = "data.csv";
-		var btn = document.getElementById('dlCSV');
-		var csv = Papa.unparse(rawData)
-		var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-		var url = URL.createObjectURL(blob);
-		btn.setAttribute("href", url);
-		btn.setAttribute("download", filename);
-	}
+	    for (let x of timestamps) {
+	        if (x > target + 1000) {
+	            rps.push({
+	                name: x,
+	                value: count
+	            })
+	            target += 1000
+	            count = 0
+	        }
+	        count += 1
+	        if (x == timestamps[-1]) {
+	            rps.push({
+	                name: x,
+	                value: count
+	            })
+	        }
+	    }
+	    const ctx = document.getElementById('js-rps-container');
 
-	createHorizontalBarChart();
+	    new Chart(ctx, {
+	            type: 'line',
+	            data: {
+	                labels: rps.map((item) => (item.name - rps[0].name) / 1000),
+	                datasets: [{
+	                    label: 'Benchmark RPS',
+	                    data: rps.map((item) => item.value),
+	                    borderWidth: 1,
+                      	borderColor: "#264A43",
+	                }]
+	            },
+	            options: {
+	                scales: {
+	                    y: {
+	                        beginAtZero: true
+	                    },
+	                    x: {
+	                        ticks: {
+	                            autoSkip: true,
+	                            maxTicksLimit: 20,
+	                            callback: function(value) {
+	                                return value < 60 ? value + 's' : value / 60 + 'm' + value % 60 + 's'
+	                            },
+	                        }
+	                    }
+	                }
+	            }
+			});
+	    }
 
-	setJSONDownloadLink();
 
-	setCSVDownloadLink();
+	    function setJSONDownloadLink() {
+	        var filename = "data.json";
+	        var btn = document.getElementById('dlJSON');
+	        var jsonData = JSON.stringify(rawData)
+	        var blob = new Blob([jsonData], {
+	            type: 'text/json;charset=utf-8;'
+	        });
+	        var url = URL.createObjectURL(blob);
+	        btn.setAttribute("href", url);
+	        btn.setAttribute("download", filename);
+	    }
+
+	    function setCSVDownloadLink() {
+	        var filename = "data.csv";
+	        var btn = document.getElementById('dlCSV');
+	        var csv = Papa.unparse(rawData)
+	        var blob = new Blob([csv], {
+	            type: 'text/csv;charset=utf-8;'
+	        });
+	        var url = URL.createObjectURL(blob);
+	        btn.setAttribute("href", url);
+	        btn.setAttribute("download", filename);
+	    }
+
+	    createHorizontalBarChart();
+
+	    createRPSChart();
+
+	    setJSONDownloadLink();
+
+	    setCSVDownloadLink();
 
 	</script>
 
