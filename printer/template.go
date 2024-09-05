@@ -418,7 +418,6 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  });
 	}
 
-	createHorizontalBarChart();
 	const createRPSChart = () => {
 	  const ctx = document.getElementById('js-rps-container');
 
