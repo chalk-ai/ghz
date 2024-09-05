@@ -21,6 +21,10 @@ type Pacer interface {
 	// Rate returns a Pacer's instantaneous hit rate (per seconds)
 	// at the given elapsed duration of an attack.
 	Rate(elapsed time.Duration) float64
+
+	String() string
+
+	NumHits() uint64
 }
 
 // A ConstantPacer defines a constant rate of hits.
@@ -30,7 +34,8 @@ type ConstantPacer struct {
 }
 
 // String returns a pretty-printed description of the ConstantPacer's behaviour:
-//   ConstantPacer{Freq: 1} => Constant{1 hits / 1s}
+//
+//	ConstantPacer{Freq: 1} => Constant{1 hits / 1s}
 func (cp *ConstantPacer) String() string {
 	return fmt.Sprintf("Constant{%d hits / 1s}", cp.Freq)
 }
@@ -251,7 +256,8 @@ func (p *StepPacer) hits(t time.Duration) float64 {
 }
 
 // String returns a pretty-printed description of the StepPacer's behaviour:
-//   StepPacer{Step: 1, StepDuration: 5s} => Step{Step:1 hits / 5s}
+//
+//	StepPacer{Step: 1, StepDuration: 5s} => Step{Step:1 hits / 5s}
 func (p *StepPacer) String() string {
 	return fmt.Sprintf("Step{Step: %d hits / %s}", p.Step, p.StepDuration.String())
 }
@@ -313,7 +319,8 @@ func (p *LinearPacer) Rate(elapsed time.Duration) float64 {
 }
 
 // String returns a pretty-printed description of the LinearPacer's behaviour:
-//   LinearPacer{Slope: 1} => Linear{1 hits / 1s}
+//
+//	LinearPacer{Slope: 1} => Linear{1 hits / 1s}
 func (p *LinearPacer) String() string {
 	return fmt.Sprintf("Linear{%d hits / 1s}", p.Slope)
 }
