@@ -33,14 +33,9 @@ duration (ms),status,error{{ range $i, $v := .Details }}
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ghz{{ if .Name }} - {{ .Name }}{{end}}</title>
-    <script src="https://d3js.org/d3.v5.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/britecharts@3/dist/bundled/britecharts.min.js"></script>
+    <title>Chalk Benchmark {{ if .Name }} - {{ .Name }}{{end}}</title>
+  	<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/britecharts@3/dist/css/britecharts.min.css" type="text/css" /></head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
 
   </head>
@@ -86,7 +81,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
       	  <li>
             <a href="#rps">
               <span class="icon is-small">
-                <i class="fas fa-chart-bar" aria-hidden="true"></i>
+                <i class="fas fa-chart-line" aria-hidden="true"></i>
               </span>
               <span> RPS </span>
             </a>
@@ -210,7 +205,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 					<h3>Histogram</h3>
 				</a>
 				<p>
-					<div class="js-bar-container"></div>
+					<canvas id="js-bar-container"></>
 				</p>
 			</div>
 	  </div>
@@ -362,7 +357,6 @@ duration (ms),status,error{{ range $i, $v := .Details }}
   </body>
 
   <script>
-
 	const count = {{ .Count }};
 
 	const rawData = {{ jsonify .Details false }};
@@ -373,155 +367,189 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		{{ end }}
 	];
 
-	function createHorizontalBarChart() {
-		let barChart = britecharts.bar(),
-			tooltip = britecharts.miniTooltip(),
-			barContainer = d3.select('.js-bar-container'),
-			containerWidth = barContainer.node() ? barContainer.node().getBoundingClientRect().width : false,
-			tooltipContainer,
-			dataset;
+	const rps = {{ jsonify .RPS false }}
 
-		if (containerWidth) {
-			dataset = data;
-			barChart
-				.isHorizontal(true)
-				.isAnimated(true)
-				.margin({
-					left: 100,
-					right: 20,
-					top: 20,
-					bottom: 20
-				})
-				.colorSchema(["#B8CEC6","#7BA392","#3F7067","#32645B","#29524A","#264A43","#1C3B34","#0C3129","#06261F","#041D17"])
-				.width(containerWidth)
-				.yAxisPaddingBetweenChart(20)
-				.height(400)
-				// .hasPercentage(true)
-				.enableLabels(true)
-				.labelsNumberFormat('')
-				.percentageAxisToMaxRatio(1.3)
-				.on('customMouseOver', tooltip.show)
-				.on('customMouseMove', tooltip.update)
-				.on('customMouseOut', tooltip.hide);
+	const aggData = {{ jsonify .Aggs false }}
 
-			barChart.orderingFunction(function(a, b) {
-				if (a.name.startsWith(">=P99")) {
-					return -1;
+	const createBarChart = () => {
+	  const ctx = document.getElementById('js-bar-container');
+
+	  new Chart(ctx, {
+		type: 'bar',
+		data: {
+		  labels: data.map((item) => item.name),
+		  datasets: [{
+			label: 'Latency Bucket',
+			data: data.map((item) => item.value),
+			borderWidth: 1,
+			barThickness: 20,
+			backgroundColor: ["#B8CEC6", "#7BA392", "#3F7067", "#32645B", "#29524A", "#264A43", "#1C3B34", "#0C3129", "#06261F", "#041D17"]
+		  }]
+		},
+		options: {
+		  aspectRatio: 3,
+		  plugins: {
+			legend: {
+			  display: false
+			},
+		  },
+		  tooltips: {
+			callbacks: {
+			  label: function(tooltipItem) {
+				return tooltipItem.yLabel;
+			  }
+			}
+		  },
+		  indexAxis: 'y',
+		  scales: {
+			y: {
+			  ticks: {
+				callback: function(value) {
+				  if (value == data.length - 1) {
+					return data[value].name.split(' ')[0]
+				  } else {
+					return parseFloat(data[value].name).toFixed(1) + 'ms'
+				  }
 				}
-				if (b.name.startsWith(">=P99")) {
-					return 1;
-				}
-
-				var nA = a.name.replace(/ms/gi, '');
-				var nB = b.name.replace(/ms/gi, '');
-
-				var vA = Number.parseFloat(nA);
-				var vB = Number.parseFloat(nB);
-
-				return vB - vA;
-			})
-
-			barContainer.datum(dataset).call(barChart);
-
-			tooltipContainer = d3.select('.js-bar-container .bar-chart .metadata-group');
-			tooltipContainer.datum([]).call(tooltip);
-		}
+			  }
+			}
+		  }
+		},
+	  });
 	}
-	function createRPSChart() {
-	    let timestamps = rawData.map((item) => {
-	        return Date.parse(item["timestamp"])
-	    }).sort();
 
-	    let rps = [];
-	    let target = timestamps[0] + 1000;
-	    let count = 0
+	createHorizontalBarChart();
+	const createRPSChart = () => {
+	  const ctx = document.getElementById('js-rps-container');
 
-	    for (let x of timestamps) {
-	        if (x > target + 1000) {
-	            rps.push({
-	                name: x,
-	                value: count
-	            })
-	            target += 1000
-	            count = 0
-	        }
-	        count += 1
-	        if (x == timestamps[-1]) {
-	            rps.push({
-	                name: x,
-	                value: count
-	            })
-	        }
-	    }
-	    const ctx = document.getElementById('js-rps-container');
+	  new Chart(ctx, {
+		type: 'line',
+		data: {
+		  labels: rps.map((item) => (item.x / 1000)),
+		  datasets: [
+			{
+			  label: 'Benchmark RPS',
+			  data: rps,
+			  borderWidth: 2,
+			  borderColor: "rgba(38, 74, 67, 1)",
+			  backgroundColor: "rgba(38, 74, 67, 1)",
+			  pointRadius: 0,
+			  tension: 0.3,
+			},
+			{{ if .P50}}
+			{
+			  label: 'Benchmark P50',
+			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p50 / 1e6 })),
+			  borderWidth: 1.5,
+			  borderColor: "rgba(182, 162, 252, 1)",
+			  backgroundColor: "rgba(182, 162, 252, .5)",
+			  tension: 0.3,
+			  pointRadius: 0,
+			  lineWidth: 2,
+			  yAxisID: "y2"
+			},
+			{{ end }}
+			{{ if .P95}}
+			{
+			  label: 'Benchmark P95',
+			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p95 / 1e6 })),
+			  borderWidth: 1.5,
+			  borderColor: "rgba(186, 221, 98, 1)",
+			  backgroundColor: "rgba(186, 221, 98, .5)",
+			  tension: 0.3,
+			  pointRadius: 0,
+			  lineWidth: 2,
+			  yAxisID: "y2"
+			},
+			{{ end }}
+			{{ if .P99 }}
+			{
+			  label: 'Benchmark P99',
+			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p99 / 1e6 })),
+			  borderWidth: 1.5,
+			  borderColor: "rgba(252, 152, 129)",
+			  backgroundColor: "rgba(252, 152, 129, .5)",
+			  tension: 0.3,
+			  pointRadius: 0,
+			  yAxisID: "y2"
+			}
+			{{ end }}
+		  ]
+		},
+		options: {
+		  aspectRatio: 2.5,
+		  layout: {
+			padding: {
+			  left: 30
+			}
+		  },
+		  scales: {
+			y:
+			{
+			  beginAtZero: true,
+			  type: 'linear',
+			  position: 'left',
+			  stack: "demo",
+			  stackWeight: 3,
+			},
+			y2: {
+			  type: 'linear',
+			  position: 'left',
+			  offset: true,
+			  stack: "demo",
+			  stackWeight: 2,
+			  ticks: {
+          callback: function(value) {
+            return value + 'ms'
+          },
+			  },
+			},
+			x: {
+          ticks: {
+            callback: function(value) {
+              return value < 60 ? value + 's' : Math.floor(value / 60) + 'm' + value % 60 + 's'
+            },
+            autoSkip: true,
+            maxTicksLimit: 20,
+          }
+        }
+		  }
+		}
+	  });
+	}
 
-	    new Chart(ctx, {
-	            type: 'line',
-	            data: {
-	                labels: rps.map((item) => (item.name - rps[0].name) / 1000),
-	                datasets: [{
-	                    label: 'Benchmark RPS',
-	                    data: rps.map((item) => item.value),
-	                    borderWidth: 1,
-                      	borderColor: "#264A43",
-	                }]
-	            },
-	            options: {
-	                scales: {
-	                    y: {
-	                        beginAtZero: true
-	                    },
-	                    x: {
-	                        ticks: {
-	                            autoSkip: true,
-	                            maxTicksLimit: 20,
-	                            callback: function(value) {
-	                                return value < 60 ? value + 's' : value / 60 + 'm' + value % 60 + 's'
-	                            },
-	                        }
-	                    }
-	                }
-	            }
-			});
-	    }
+	const setJSONDownloadLink = () => {
+	  var filename = "data.json";
+	  var btn = document.getElementById('dlJSON');
+	  var jsonData = JSON.stringify(rawData)
+	  var blob = new Blob([jsonData], {
+		type: 'text/json;charset=utf-8;'
+	  });
+	  var url = URL.createObjectURL(blob);
+	  btn.setAttribute("href", url);
+	  btn.setAttribute("download", filename);
+	}
 
+	const setCSVDownloadLink = () => {
+	  let filename = "data.csv";
+	  let btn = document.getElementById('dlCSV');
+	  let csv = Papa.unparse(rawData)
+	  let blob = new Blob([csv], {
+		type: 'text/csv;charset=utf-8;'
+	  });
+	  let url = URL.createObjectURL(blob);
+	  btn.setAttribute("href", url);
+	  btn.setAttribute("download", filename);
+	}
 
-	    function setJSONDownloadLink() {
-	        var filename = "data.json";
-	        var btn = document.getElementById('dlJSON');
-	        var jsonData = JSON.stringify(rawData)
-	        var blob = new Blob([jsonData], {
-	            type: 'text/json;charset=utf-8;'
-	        });
-	        var url = URL.createObjectURL(blob);
-	        btn.setAttribute("href", url);
-	        btn.setAttribute("download", filename);
-	    }
+	createBarChart();
 
-	    function setCSVDownloadLink() {
-	        var filename = "data.csv";
-	        var btn = document.getElementById('dlCSV');
-	        var csv = Papa.unparse(rawData)
-	        var blob = new Blob([csv], {
-	            type: 'text/csv;charset=utf-8;'
-	        });
-	        var url = URL.createObjectURL(blob);
-	        btn.setAttribute("href", url);
-	        btn.setAttribute("download", filename);
-	    }
+	createRPSChart();
 
-	    createHorizontalBarChart();
-
-	    createRPSChart();
-
-	    setJSONDownloadLink();
-
-	    setCSVDownloadLink();
-
+	setCSVDownloadLink();
+	setJSONDownloadLink();
 	</script>
-
 	<script defer src="https://use.fontawesome.com/releases/v5.1.0/js/all.js"></script>
-
 </html>
 `
 )
