@@ -275,7 +275,7 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 
 			rep.Fastest = time.Duration(fastestNum * float64(time.Second))
 			rep.Slowest = time.Duration(slowestNum * float64(time.Second))
-			rep.LatencyDistribution = latencies(okLats)
+			rep.LatencyDistribution = Latencies(okLats)
 			idx := slices.IndexFunc(rep.LatencyDistribution, func(l LatencyDistribution) bool {
 				return l.Percentage == 99
 			})
@@ -285,7 +285,7 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 			} else {
 				p99 = rep.LatencyDistribution[idx].Latency.Seconds()
 			}
-			rep.Histogram = histogram(okLats, slowestNum, fastestNum, p99)
+			rep.Histogram = Histogram(okLats, slowestNum, fastestNum, p99)
 		}
 
 		rep.Details = r.details
@@ -294,7 +294,7 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 	return rep
 }
 
-func latencies(latencies []float64) []LatencyDistribution {
+func Latencies(latencies []float64) []LatencyDistribution {
 	pctls := []int{10, 25, 50, 75, 90, 95, 99}
 	data := make([]float64, len(pctls))
 	lt := float64(len(latencies))
@@ -326,7 +326,7 @@ func latencies(latencies []float64) []LatencyDistribution {
 	return res
 }
 
-func histogram(latencies []float64, slowest, fastest float64, p99 float64) []Bucket {
+func Histogram(latencies []float64, slowest, fastest float64, p99 float64) []Bucket {
 	cleanTail := len(latencies) >= 100
 	graphSlowest := slowest
 	formatMark := func(mark float64) string {
