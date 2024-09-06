@@ -427,7 +427,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		  labels: rps.map((item) => (item.x / 1000)),
 		  datasets: [
 			{
-			  label: 'Benchmark RPS',
+			  label: 'RPS',
 			  data: rps,
 			  borderWidth: 2,
 			  borderColor: "rgba(38, 74, 67, 1)",
@@ -437,11 +437,11 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 			},
 			{{ if .P50}}
 			{
-			  label: 'Benchmark P50',
+			  label: 'P50',
 			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p50 / 1e6 })),
 			  borderWidth: 1.5,
-			  borderColor: "rgba(182, 162, 252, 1)",
-			  backgroundColor: "rgba(182, 162, 252, .5)",
+			  borderColor: "rgb(112, 206, 151)",
+			  backgroundColor: "rgb(112, 206, 151, .8)",
 			  tension: 0.3,
 			  pointRadius: 0,
 			  lineWidth: 2,
@@ -450,11 +450,11 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 			{{ end }}
 			{{ if .P95}}
 			{
-			  label: 'Benchmark P95',
+			  label: 'P95',
 			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p95 / 1e6 })),
 			  borderWidth: 1.5,
-			  borderColor: "rgba(186, 221, 98, 1)",
-			  backgroundColor: "rgba(186, 221, 98, .5)",
+			  borderColor: "rgb(129, 206, 234)",
+			  backgroundColor: "rgb(129, 206, 234, .8)",
 			  tension: 0.3,
 			  pointRadius: 0,
 			  lineWidth: 2,
@@ -463,11 +463,11 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 			{{ end }}
 			{{ if .P99 }}
 			{
-			  label: 'Benchmark P99',
+			  label: 'P99',
 			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p99 / 1e6 })),
 			  borderWidth: 1.5,
-			  borderColor: "rgba(252, 152, 129)",
-			  backgroundColor: "rgba(252, 152, 129, .5)",
+			  borderColor: "rgb(249, 149, 127)",
+			  backgroundColor: "rgb(249, 149, 127, .8)",
 			  tension: 0.3,
 			  pointRadius: 0,
 			  yAxisID: "y2"
@@ -476,6 +476,14 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		  ]
 		},
 		options: {
+		  plugins: {
+			legend: {
+				align: "end",
+				labels: {
+				  boxWidth: 20
+				}
+			  }
+		  },
 		  aspectRatio: 2.5,
 		  layout: {
 			padding: {
@@ -489,14 +497,14 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 			  type: 'linear',
 			  position: 'left',
 			  stack: "demo",
-			  stackWeight: 3,
+			  stackWeight: 2,
 			},
 			y2: {
 			  type: 'linear',
 			  position: 'left',
 			  offset: true,
 			  stack: "demo",
-			  stackWeight: 2,
+			  stackWeight: 3,
 			  ticks: {
           callback: function(value) {
             return value + 'ms'
