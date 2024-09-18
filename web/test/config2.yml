@@ -1,9 +1,0 @@
----
-server:
-  port: 4321
-database:
-  type: postgres
-  connection: host=dbhost user=dbuser dbname=ghz sslmode=disable password=dbpwd
-log:
-  level: warn
-  path: "/tmp/ghz.log"
