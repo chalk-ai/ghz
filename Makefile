@@ -67,7 +67,7 @@ clean:
 
 # Lint runs all linters. This is the main lint target to run.
 .PHONY: lint
-lint: 
+lint:
 	golangci-lint run ./...
 
 # Test runs go test on GO_PKGS. This does not produce code coverage.
