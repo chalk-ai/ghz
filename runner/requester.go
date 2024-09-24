@@ -28,7 +28,7 @@ import (
 )
 
 // Max size of the buffer of result channel.
-const maxResult = 1000000
+const maxResult = 100_000_000
 
 // result of a call
 type callResult struct {
