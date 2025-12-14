@@ -80,9 +80,10 @@ type Options struct {
 
 // Aggs
 type DataPointAgg struct {
-	P50 float64 `json:"p50"`
-	P95 float64 `json:"p95"`
-	P99 float64 `json:"p99"`
+	P50   float64 `json:"p50"`
+	P95   float64 `json:"p95"`
+	P99   float64 `json:"p99"`
+	P99_9 float64 `json:"p99_9"`
 }
 
 type DataPoint struct {
@@ -116,11 +117,12 @@ type Report struct {
 	Histogram           []Bucket              `json:"histogram"`
 	Details             []ResultDetail        `json:"details"`
 
-	Aggs []DataPoint
-	RPS  []DataPointRPS
-	P50  bool
-	P95  bool
-	P99  bool
+	Aggs  []DataPoint
+	RPS   []DataPointRPS
+	P50   bool
+	P95   bool
+	P99   bool
+	P99_9 bool
 
 	Tags map[string]string `json:"tags,omitempty"`
 }
