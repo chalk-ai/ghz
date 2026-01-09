@@ -141,7 +141,7 @@ func (r Report) MarshalJSON() ([]byte, error) {
 
 // LatencyDistribution holds latency distribution data
 type LatencyDistribution struct {
-	Percentage int           `json:"percentage"`
+	Percentage float64       `json:"percentage"`
 	Latency    time.Duration `json:"latency"`
 }
 
@@ -224,7 +224,8 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 		Count:          r.totalCount,
 		Total:          total,
 		ErrorDist:      r.errorDist,
-		StatusCodeDist: r.statusCodeDist}
+		StatusCodeDist: r.statusCodeDist,
+		P99_9:          r.config.p99_9}
 
 	rep.Options = Options{
 		Call:              r.config.call,
@@ -300,17 +301,32 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 
 			rep.Fastest = time.Duration(fastestNum * float64(time.Second))
 			rep.Slowest = time.Duration(slowestNum * float64(time.Second))
-			rep.LatencyDistribution = Latencies(okLats)
+			rep.LatencyDistribution = Latencies(okLats, r.config.p99_9)
+
+			// Try to find p99.9 first, then fall back to p99, then slowestNum
 			idx := slices.IndexFunc(rep.LatencyDistribution, func(l LatencyDistribution) bool {
-				return l.Percentage == 99
+				return l.Percentage == 99.9
 			})
-			var p99 float64
-			if idx == -1 {
-				p99 = slowestNum
+			var tailPercentile float64
+			var tailPercentileValue float64
+			if idx != -1 {
+				// p99.9 is available
+				tailPercentile = rep.LatencyDistribution[idx].Latency.Seconds()
+				tailPercentileValue = 99.9
 			} else {
-				p99 = rep.LatencyDistribution[idx].Latency.Seconds()
+				// Fall back to p99
+				idx = slices.IndexFunc(rep.LatencyDistribution, func(l LatencyDistribution) bool {
+					return l.Percentage == 99
+				})
+				if idx == -1 {
+					tailPercentile = slowestNum
+					tailPercentileValue = 100
+				} else {
+					tailPercentile = rep.LatencyDistribution[idx].Latency.Seconds()
+					tailPercentileValue = 99
+				}
 			}
-			rep.Histogram = Histogram(okLats, slowestNum, fastestNum, p99)
+			rep.Histogram = Histogram(okLats, slowestNum, fastestNum, tailPercentile, tailPercentileValue)
 		}
 
 		rep.Details = r.details
@@ -319,8 +335,11 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 	return rep
 }
 
-func Latencies(latencies []float64) []LatencyDistribution {
-	pctls := []int{10, 25, 50, 75, 90, 95, 99}
+func Latencies(latencies []float64, includeP99_9 bool) []LatencyDistribution {
+	pctls := []float64{10, 25, 50, 75, 90, 95, 99}
+	if includeP99_9 {
+		pctls = append(pctls, 99.9)
+	}
 	data := make([]float64, len(pctls))
 	lt := float64(len(latencies))
 	for i, p := range pctls {
@@ -351,14 +370,14 @@ func Latencies(latencies []float64) []LatencyDistribution {
 	return res
 }
 
-func Histogram(latencies []float64, slowest, fastest float64, p99 float64) []Bucket {
+func Histogram(latencies []float64, slowest, fastest float64, tailPercentile float64, tailPercentileValue float64) []Bucket {
 	cleanTail := len(latencies) >= 100
 	graphSlowest := slowest
 	formatMark := func(mark float64) string {
 		return fmt.Sprintf("%.3f", mark*1000)
 	}
 	if cleanTail {
-		graphSlowest = p99
+		graphSlowest = tailPercentile
 	}
 	bc := 10
 	buckets := make([]float64, bc)
@@ -394,7 +413,11 @@ func Histogram(latencies []float64, slowest, fastest float64, p99 float64) []Buc
 		}
 	}
 	if cleanTail {
-		res[bc-1].AlternativeMark = fmt.Sprintf(">=P99 [%s-%s]", formatMark(p99), formatMark(slowest))
+		percentileLabel := "P99"
+		if tailPercentileValue == 99.9 {
+			percentileLabel = "P99.9"
+		}
+		res[bc-1].AlternativeMark = fmt.Sprintf(">=%s [%s-%s]", percentileLabel, formatMark(tailPercentile), formatMark(slowest))
 	}
 	return res
 }

@@ -134,6 +134,7 @@ type RunConfig struct {
 	tags                          []byte
 	skipFirst                     int
 	countErrors                   bool
+	p99_9                         bool
 	recvMsgFunc                   StreamRecvMsgInterceptFunc
 	streamInterceptorProviderFunc StreamInterceptorProviderFunc
 }
@@ -713,6 +714,15 @@ func WithCountErrors(v bool) Option {
 	}
 }
 
+// WithP99_9 enables p99.9 percentile calculation
+func WithP99_9(v bool) Option {
+	return func(o *RunConfig) error {
+		o.p99_9 = v
+
+		return nil
+	}
+}
+
 // WithProtoFile specified proto file path and optionally import paths
 // We will automatically add the proto file path's directory and the current directory
 //
@@ -1219,6 +1229,7 @@ func fromConfig(cfg *Config) []Option {
 		WithConcurrencyStepDuration(time.Duration(cfg.CStepDuration)),
 		WithConcurrencyDuration(time.Duration(cfg.CMaxDuration)),
 		WithCountErrors(cfg.CountErrors),
+		WithP99_9(cfg.P99_9),
 		WithDisableTemplateFuncs(cfg.DisableTemplateFuncs),
 		WithDisableTemplateData(cfg.DisableTemplateData),
 		func(o *RunConfig) error {

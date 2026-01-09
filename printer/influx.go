@@ -180,6 +180,14 @@ func (rp *ReportPrinter) getInfluxFields() string {
 			if v.Percentage == 95 {
 				s = append(s, fmt.Sprintf("p95=%v", v.Latency.Nanoseconds()))
 			}
+
+			if v.Percentage == 99 {
+				s = append(s, fmt.Sprintf("p99=%v", v.Latency.Nanoseconds()))
+			}
+
+			if v.Percentage == 99.9 {
+				s = append(s, fmt.Sprintf("p99_9=%v", v.Latency.Nanoseconds()))
+			}
 		}
 	}
 
