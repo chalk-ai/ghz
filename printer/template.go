@@ -471,6 +471,18 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 			  tension: 0.3,
 			  pointRadius: 0,
 			  yAxisID: "y2"
+			},
+			{{ end }}
+			{{ if .P99_9 }}
+			{
+			  label: 'P99.9',
+			  data: aggData.map((item) => ({ x: item.x / 1000, y: item.y.p99_9 / 1e6 })),
+			  borderWidth: 1.5,
+			  borderColor: "rgb(220, 100, 100)",
+			  backgroundColor: "rgb(220, 100, 100, .8)",
+			  tension: 0.3,
+			  pointRadius: 0,
+			  yAxisID: "y2"
 			}
 			{{ end }}
 		  ]
