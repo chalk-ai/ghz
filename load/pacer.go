@@ -317,3 +317,191 @@ func (p *LinearPacer) Rate(elapsed time.Duration) float64 {
 func (p *LinearPacer) String() string {
 	return fmt.Sprintf("Linear{%d hits / 1s}", p.Slope)
 }
+
+// LoadSegment defines a segment of load with a specific RPS for a duration.
+type LoadSegment struct {
+	Duration time.Duration
+	RPS      float64
+}
+
+// SegmentedPacer paces the hit rate using a sequence of constant-rate segments.
+// Each segment runs at a specified RPS for a specified duration.
+// Example: 1000 RPS for 1hr, then 2000 RPS for 1hr, then 3000 RPS for 2hr.
+type SegmentedPacer struct {
+	Segments []LoadSegment
+	Max      uint64 // Optional maximum allowed hits
+
+	once            sync.Once
+	cumulativeHits  []float64       // Cumulative hits at end of each segment
+	cumulativeTimes []time.Duration // Cumulative time at end of each segment
+	totalDuration   time.Duration   // Total duration of all segments
+}
+
+// initialize precomputes cumulative values for efficient lookup.
+func (sp *SegmentedPacer) initialize() {
+	if len(sp.Segments) == 0 {
+		panic("SegmentedPacer.Segments cannot be empty")
+	}
+
+	sp.cumulativeHits = make([]float64, len(sp.Segments))
+	sp.cumulativeTimes = make([]time.Duration, len(sp.Segments))
+
+	var cumulativeHit float64
+	var cumulativeTime time.Duration
+
+	for i, seg := range sp.Segments {
+		if seg.Duration <= 0 {
+			panic(fmt.Sprintf("Segment %d duration must be positive", i))
+		}
+		if seg.RPS < 0 {
+			panic(fmt.Sprintf("Segment %d RPS cannot be negative", i))
+		}
+
+		// Integral of constant RPS over duration: RPS * duration_seconds
+		segmentHits := seg.RPS * seg.Duration.Seconds()
+		cumulativeHit += segmentHits
+		cumulativeTime += seg.Duration
+
+		sp.cumulativeHits[i] = cumulativeHit
+		sp.cumulativeTimes[i] = cumulativeTime
+	}
+
+	sp.totalDuration = cumulativeTime
+}
+
+// findSegment returns the segment index and local elapsed time within that segment
+// for the given global elapsed time.
+func (sp *SegmentedPacer) findSegment(elapsed time.Duration) (segmentIdx int, localElapsed time.Duration) {
+	// Handle time beyond all segments
+	if elapsed >= sp.totalDuration {
+		return len(sp.Segments) - 1, elapsed - (sp.totalDuration - sp.Segments[len(sp.Segments)-1].Duration)
+	}
+
+	for i, cumulativeTime := range sp.cumulativeTimes {
+		if elapsed < cumulativeTime {
+			// Found the segment
+			var startTime time.Duration
+			if i > 0 {
+				startTime = sp.cumulativeTimes[i-1]
+			}
+			return i, elapsed - startTime
+		}
+	}
+
+	// Should not reach here if totalDuration is set correctly
+	return len(sp.Segments) - 1, 0
+}
+
+// expectedHits calculates the expected number of hits at the given elapsed time
+// using the precomputed cumulative values.
+func (sp *SegmentedPacer) expectedHits(elapsed time.Duration) float64 {
+	if elapsed <= 0 {
+		return 0
+	}
+
+	// Handle time beyond all segments (stop sending)
+	if elapsed >= sp.totalDuration {
+		return sp.cumulativeHits[len(sp.cumulativeHits)-1]
+	}
+
+	segmentIdx, localElapsed := sp.findSegment(elapsed)
+
+	// Base hits from previous segments
+	var baseHits float64
+	if segmentIdx > 0 {
+		baseHits = sp.cumulativeHits[segmentIdx-1]
+	}
+
+	// Add hits from current segment
+	currentSegmentHits := sp.Segments[segmentIdx].RPS * localElapsed.Seconds()
+
+	return baseHits + currentSegmentHits
+}
+
+// timeForHit calculates when a specific hit number should be sent.
+// Returns the elapsed time at which the given hit should occur.
+func (sp *SegmentedPacer) timeForHit(hitNum uint64) time.Duration {
+	if hitNum == 0 {
+		return 0
+	}
+
+	targetHits := float64(hitNum)
+	var cumulativeTime time.Duration
+
+	for i, seg := range sp.Segments {
+		var baseHits float64
+		if i > 0 {
+			baseHits = sp.cumulativeHits[i-1]
+		}
+
+		segmentMaxHits := sp.cumulativeHits[i]
+
+		// Skip zero-RPS segments as they don't contribute hits
+		if seg.RPS == 0 {
+			cumulativeTime += seg.Duration
+			continue
+		}
+
+		if targetHits <= segmentMaxHits {
+			// The hit falls within this segment
+			hitsIntoSegment := targetHits - baseHits
+			timeIntoSegment := time.Duration(hitsIntoSegment / seg.RPS * float64(time.Second))
+			return cumulativeTime + timeIntoSegment
+		}
+
+		cumulativeTime += seg.Duration
+	}
+
+	// Beyond all segments
+	return sp.totalDuration
+}
+
+// Pace determines the length of time to sleep until the next hit is sent.
+func (sp *SegmentedPacer) Pace(elapsed time.Duration, hits uint64) (time.Duration, bool) {
+	if sp.Max > 0 && hits >= sp.Max {
+		return 0, true
+	}
+
+	sp.once.Do(sp.initialize)
+
+	// Stop if we've completed all segments
+	if elapsed >= sp.totalDuration {
+		return 0, true
+	}
+
+	// Calculate when the next hit should be sent
+	nextHitTime := sp.timeForHit(hits + 1)
+
+	// If the next hit time is beyond our total duration, stop
+	if nextHitTime >= sp.totalDuration {
+		return 0, true
+	}
+
+	// If we're past the scheduled time for the next hit, send immediately
+	if elapsed >= nextHitTime {
+		return 0, false
+	}
+
+	// Otherwise, wait until the scheduled time
+	return nextHitTime - elapsed, false
+}
+
+// Rate returns the SegmentedPacer's instantaneous hit rate (i.e. requests per second)
+// at the given elapsed duration.
+func (sp *SegmentedPacer) Rate(elapsed time.Duration) float64 {
+	sp.once.Do(sp.initialize)
+
+	if elapsed >= sp.totalDuration {
+		// Beyond all segments, return 0
+		return 0
+	}
+
+	segmentIdx, _ := sp.findSegment(elapsed)
+	return sp.Segments[segmentIdx].RPS
+}
+
+// String returns a pretty-printed description of the SegmentedPacer's behaviour.
+func (sp *SegmentedPacer) String() string {
+	sp.once.Do(sp.initialize)
+	return fmt.Sprintf("Segmented{%d segments, %s total duration}", len(sp.Segments), sp.totalDuration)
+}

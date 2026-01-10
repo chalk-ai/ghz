@@ -1069,3 +1069,371 @@ func durationEqual(x, y time.Duration) bool {
 	}
 	return diff <= time.Microsecond
 }
+
+func TestSegmentedPacer_SingleSegment(t *testing.T) {
+	// Single segment should behave like ConstantPacer
+	for _, tc := range []struct {
+		name    string
+		rps     float64
+		elapsed time.Duration
+		hits    uint64
+		wait    time.Duration
+		stop    bool
+	}{
+		{
+			name:    "100 RPS, 0 hits, 0s elapsed",
+			rps:     100,
+			elapsed: 0,
+			hits:    0,
+			wait:    10 * time.Millisecond, // 1/100 = 10ms
+			stop:    false,
+		},
+		{
+			name:    "100 RPS, 0 hits, 5ms elapsed",
+			rps:     100,
+			elapsed: 5 * time.Millisecond,
+			hits:    0,
+			wait:    5 * time.Millisecond,
+			stop:    false,
+		},
+		{
+			name:    "100 RPS, 50 hits, 0.5s elapsed (on schedule)",
+			rps:     100,
+			elapsed: 500 * time.Millisecond,
+			hits:    50,
+			wait:    10 * time.Millisecond,
+			stop:    false,
+		},
+		{
+			name:    "100 RPS, 40 hits, 0.5s elapsed (behind)",
+			rps:     100,
+			elapsed: 500 * time.Millisecond,
+			hits:    40,
+			wait:    0,
+			stop:    false,
+		},
+		{
+			name:    "1000 RPS, 1000 hits, 1s elapsed",
+			rps:     1000,
+			elapsed: 1 * time.Second,
+			hits:    1000,
+			wait:    1 * time.Millisecond,
+			stop:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sp := &SegmentedPacer{
+				Segments: []LoadSegment{
+					{Duration: 1 * time.Hour, RPS: tc.rps},
+				},
+			}
+			wait, stop := sp.Pace(tc.elapsed, tc.hits)
+			assert.True(t, durationEqual(tc.wait, wait), "wait: expected %v, got %v", tc.wait, wait)
+			assert.Equal(t, tc.stop, stop)
+		})
+	}
+}
+
+func TestSegmentedPacer_MultipleSegments(t *testing.T) {
+	// Test: 100 RPS for 1s, then 200 RPS for 1s
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{
+			{Duration: 1 * time.Second, RPS: 100},
+			{Duration: 1 * time.Second, RPS: 200},
+		},
+	}
+
+	for _, tc := range []struct {
+		name    string
+		elapsed time.Duration
+		hits    uint64
+		wait    time.Duration
+		stop    bool
+	}{
+		{
+			name:    "Start of first segment",
+			elapsed: 0,
+			hits:    0,
+			wait:    10 * time.Millisecond, // 1/100
+			stop:    false,
+		},
+		{
+			name:    "Middle of first segment, on schedule",
+			elapsed: 500 * time.Millisecond,
+			hits:    50, // Expected: 100 * 0.5 = 50
+			wait:    10 * time.Millisecond,
+			stop:    false,
+		},
+		{
+			name:    "End of first segment",
+			elapsed: 1 * time.Second,
+			hits:    100, // Expected: 100 * 1 = 100
+			wait:    5 * time.Millisecond, // Now at 200 RPS, 1/200 = 5ms
+			stop:    false,
+		},
+		{
+			name:    "Start of second segment, behind",
+			elapsed: 1 * time.Second,
+			hits:    90, // Behind by 10 hits
+			wait:    0,
+			stop:    false,
+		},
+		{
+			name:    "Middle of second segment, on schedule",
+			elapsed: 1500 * time.Millisecond,
+			hits:    200, // Expected: 100 (first segment) + 200*0.5 (second segment) = 200
+			wait:    5 * time.Millisecond,
+			stop:    false,
+		},
+		{
+			name:    "End of second segment",
+			elapsed: 2 * time.Second,
+			hits:    300, // Expected: 100 + 200 = 300
+			wait:    0,
+			stop:    true, // All segments complete
+		},
+		{
+			name:    "Beyond all segments",
+			elapsed: 3 * time.Second,
+			hits:    300,
+			wait:    0,
+			stop:    true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wait, stop := sp.Pace(tc.elapsed, tc.hits)
+			assert.True(t, durationEqual(tc.wait, wait), "wait: expected %v, got %v", tc.wait, wait)
+			assert.Equal(t, tc.stop, stop)
+		})
+	}
+}
+
+func TestSegmentedPacer_ExpectedHits(t *testing.T) {
+	// Test: 1000 RPS for 1hr, 2000 RPS for 1hr, 3000 RPS for 2hr, 1000 RPS for 1hr
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{
+			{Duration: 1 * time.Hour, RPS: 1000},
+			{Duration: 1 * time.Hour, RPS: 2000},
+			{Duration: 2 * time.Hour, RPS: 3000},
+			{Duration: 1 * time.Hour, RPS: 1000},
+		},
+	}
+
+	for _, tc := range []struct {
+		name         string
+		elapsed      time.Duration
+		expectedHits float64
+	}{
+		{
+			name:         "Start",
+			elapsed:      0,
+			expectedHits: 0,
+		},
+		{
+			name:         "30 min into first segment",
+			elapsed:      30 * time.Minute,
+			expectedHits: 1000 * 0.5 * 3600, // 1000 RPS * 0.5 hour * 3600 seconds/hour = 1,800,000
+		},
+		{
+			name:         "End of first segment",
+			elapsed:      1 * time.Hour,
+			expectedHits: 1000 * 3600, // 3,600,000
+		},
+		{
+			name:         "30 min into second segment",
+			elapsed:      90 * time.Minute,
+			expectedHits: 1000*3600 + 2000*0.5*3600, // 3,600,000 + 3,600,000 = 7,200,000
+		},
+		{
+			name:         "End of second segment",
+			elapsed:      2 * time.Hour,
+			expectedHits: 1000*3600 + 2000*3600, // 3,600,000 + 7,200,000 = 10,800,000
+		},
+		{
+			name:         "1 hour into third segment",
+			elapsed:      3 * time.Hour,
+			expectedHits: 1000*3600 + 2000*3600 + 3000*3600, // 10,800,000 + 10,800,000 = 21,600,000
+		},
+		{
+			name:         "End of third segment",
+			elapsed:      4 * time.Hour,
+			expectedHits: 1000*3600 + 2000*3600 + 3000*2*3600, // 10,800,000 + 21,600,000 = 32,400,000
+		},
+		{
+			name:         "End of fourth segment",
+			elapsed:      5 * time.Hour,
+			expectedHits: 1000*3600 + 2000*3600 + 3000*2*3600 + 1000*3600, // 32,400,000 + 3,600,000 = 36,000,000
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sp.initialize()
+			actual := sp.expectedHits(tc.elapsed)
+			assert.True(t, floatEqual(tc.expectedHits, actual), "expectedHits: expected %v, got %v", tc.expectedHits, actual)
+		})
+	}
+}
+
+func TestSegmentedPacer_Rate(t *testing.T) {
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{
+			{Duration: 10 * time.Second, RPS: 100},
+			{Duration: 10 * time.Second, RPS: 200},
+			{Duration: 10 * time.Second, RPS: 50},
+		},
+	}
+
+	for _, tc := range []struct {
+		name     string
+		elapsed  time.Duration
+		expected float64
+	}{
+		{
+			name:     "First segment start",
+			elapsed:  0,
+			expected: 100,
+		},
+		{
+			name:     "First segment middle",
+			elapsed:  5 * time.Second,
+			expected: 100,
+		},
+		{
+			name:     "Second segment start",
+			elapsed:  10 * time.Second,
+			expected: 200,
+		},
+		{
+			name:     "Second segment middle",
+			elapsed:  15 * time.Second,
+			expected: 200,
+		},
+		{
+			name:     "Third segment start",
+			elapsed:  20 * time.Second,
+			expected: 50,
+		},
+		{
+			name:     "Third segment end",
+			elapsed:  30 * time.Second,
+			expected: 0, // Beyond all segments
+		},
+		{
+			name:     "Beyond all segments",
+			elapsed:  40 * time.Second,
+			expected: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := sp.Rate(tc.elapsed)
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestSegmentedPacer_ZeroRPS(t *testing.T) {
+	// Test segment with zero RPS (pause)
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{
+			{Duration: 1 * time.Second, RPS: 100},
+			{Duration: 2 * time.Second, RPS: 0}, // Pause
+			{Duration: 1 * time.Second, RPS: 100},
+		},
+	}
+
+	for _, tc := range []struct {
+		name    string
+		elapsed time.Duration
+		hits    uint64
+		wait    time.Duration
+		stop    bool
+	}{
+		{
+			name:    "During first segment",
+			elapsed: 500 * time.Millisecond,
+			hits:    50,
+			wait:    10 * time.Millisecond,
+			stop:    false,
+		},
+		{
+			name:    "Start of pause segment",
+			elapsed: 1 * time.Second,
+			hits:    100,
+			wait:    2010 * time.Millisecond, // Wait until hit #101 in third segment (at 3.01s)
+			stop:    false,
+		},
+		{
+			name:    "During pause segment",
+			elapsed: 2 * time.Second,
+			hits:    100,
+			wait:    1010 * time.Millisecond, // Wait until hit #101 in third segment (at 3.01s)
+			stop:    false,
+		},
+		{
+			name:    "Start of third segment",
+			elapsed: 3 * time.Second,
+			hits:    100,
+			wait:    10 * time.Millisecond,
+			stop:    false,
+		},
+		{
+			name:    "During third segment",
+			elapsed: 3500 * time.Millisecond,
+			hits:    150,
+			wait:    10 * time.Millisecond,
+			stop:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wait, stop := sp.Pace(tc.elapsed, tc.hits)
+			assert.True(t, durationEqual(tc.wait, wait), "wait: expected %v, got %v", tc.wait, wait)
+			assert.Equal(t, tc.stop, stop)
+		})
+	}
+}
+
+func TestSegmentedPacer_MaxHits(t *testing.T) {
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{
+			{Duration: 10 * time.Second, RPS: 100},
+		},
+		Max: 500,
+	}
+
+	// Should continue before max
+	wait, stop := sp.Pace(4*time.Second, 400)
+	assert.False(t, stop)
+	assert.True(t, wait >= 0)
+
+	// Should stop at max
+	wait, stop = sp.Pace(5*time.Second, 500)
+	assert.True(t, stop)
+	assert.Equal(t, time.Duration(0), wait)
+
+	// Should stop beyond max
+	wait, stop = sp.Pace(5*time.Second, 600)
+	assert.True(t, stop)
+	assert.Equal(t, time.Duration(0), wait)
+}
+
+func TestSegmentedPacer_String(t *testing.T) {
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{
+			{Duration: 1 * time.Hour, RPS: 1000},
+			{Duration: 2 * time.Hour, RPS: 2000},
+		},
+	}
+
+	actual := sp.String()
+	assert.Equal(t, "Segmented{2 segments, 3h0m0s total duration}", actual)
+}
+
+func TestSegmentedPacer_EmptySegments(t *testing.T) {
+	sp := &SegmentedPacer{
+		Segments: []LoadSegment{},
+	}
+
+	// Should panic when trying to pace with empty segments
+	assert.Panics(t, func() {
+		sp.Pace(0, 0)
+	})
+}
