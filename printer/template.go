@@ -36,7 +36,174 @@ duration (ms),status,error{{ range $i, $v := .Details }}
     <title>Chalk Benchmark {{ if .Name }} - {{ .Name }}{{end}}</title>
   	<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apache-arrow@15.0.0/Arrow.es2015.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
+    <style>
+      .json-key { color: #881391; }
+      .json-string { color: #1a1aa6; }
+      .json-number { color: #1c00cf; }
+      .json-boolean { color: #0d22ff; }
+      .json-null { color: #808080; }
+
+      /* Toggle switch styles */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 42px;
+        height: 22px;
+        vertical-align: middle;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .switch-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #dbdbdb;
+        transition: .3s;
+        border-radius: 22px;
+      }
+
+      .switch-slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+      }
+
+      .switch input:checked + .switch-slider {
+        background-color: #3273dc;
+      }
+
+      .switch input:checked + .switch-slider:before {
+        transform: translateX(20px);
+      }
+
+      /* Table styles */
+      #dataTable {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: visible;
+      }
+
+      #dataTable table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: white;
+      }
+
+      #dataTable thead {
+        background-color: #f5f5f5;
+      }
+
+      #dataTable th {
+        padding: 0.75em;
+        text-align: left;
+        border-bottom: 2px solid #dbdbdb;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        background-color: #f5f5f5;
+        z-index: 10;
+      }
+
+      #dataTable td {
+        padding: 0.75em;
+        border-bottom: 1px solid #dbdbdb;
+        vertical-align: top;
+      }
+
+      #dataTable tbody tr {
+        position: relative;
+      }
+
+      #dataTable tbody tr:hover {
+        background-color: #fafafa;
+      }
+
+      #dataTable tbody tr td:first-child {
+        position: relative;
+        overflow: visible;
+      }
+
+      .row-link-icon {
+        position: absolute;
+        left: -24px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.3;
+        transition: opacity 0.2s;
+        font-size: 1.1rem;
+        z-index: 100;
+      }
+
+      #dataTable tbody tr:hover .row-link-icon {
+        opacity: 1;
+      }
+
+      .row-link-icon a {
+        text-decoration: none;
+        color: #3273dc;
+      }
+
+      /* JSON wrapping */
+      .json-content {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        max-width: 100%;
+      }
+
+      pre.json-content {
+        font-size: 0.75rem;
+      }
+
+      /* Pagination controls */
+      .pagination-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding: 1rem;
+      }
+
+      .pagination-controls button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #dbdbdb;
+        background-color: white;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+
+      .pagination-controls button:hover:not(:disabled) {
+        background-color: #f5f5f5;
+      }
+
+      .pagination-controls button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .pagination-controls select {
+        padding: 0.5rem;
+        border: 1px solid #dbdbdb;
+        border-radius: 4px;
+      }
+    </style>
 
   </head>
 
@@ -209,6 +376,12 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 				</p>
 			</div>
 	  </div>
+
+	  <br />
+	  <div class="container">
+	    <hr style="border: 0; height: 2px; background-color: #dbdbdb; margin: 2rem 0;" />
+	  </div>
+
 		<div class="container">
 			<div class="content">
 				<a name="rps">
@@ -313,15 +486,48 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 			<br />
       <div class="container">
-        <div class="columns">
-          <div class="column is-narrow">
-            <div class="content">
-              <a name="data">
-                <h3>Data</h3>
-              </a>
+        <div class="content">
+          <a name="data">
+            <h3>Data</h3>
+          </a>
 
-              <a class="button" id="dlJSON">JSON</a>
-              <a class="button" id="dlCSV">CSV</a>
+          <article class="message is-info">
+            <div class="message-body">
+              {{ if gt .Options.DataSamplingRate 0.0 }}
+              <p><strong>Sample:</strong> Showing {{ len .Details }} of {{ .Count }} requests ({{ printf "%.2f%%" .Options.DataSamplingRate }} sampling rate)</p>
+              <p><strong>Note:</strong> Request/response payloads included for sampled requests</p>
+              {{ else }}
+              <p><strong>Sample:</strong> No data sampling configured</p>
+              {{ end }}
+            </div>
+          </article>
+
+        </div>
+
+        <div id="dataTableContainer" style="margin-top: 20px;">
+          <div class="field" style="margin-bottom: 12px;">
+            <label class="switch" style="margin-right: 8px;">
+              <input type="checkbox" id="globalJsonToggle" onchange="toggleAllJson()">
+              <span class="switch-slider"></span>
+            </label>
+            <span style="font-size: 0.85rem; color: #363636;">Show JSON</span>
+          </div>
+
+          <div style="margin-left: 35px; overflow: visible; position: relative;">
+            <div id="dataTable"></div>
+
+            <div class="pagination-controls">
+              <button id="firstPageBtn" onclick="goToFirstPage()">First</button>
+              <button id="prevPageBtn" onclick="goToPrevPage()">Previous</button>
+              <span>Page <strong id="currentPageDisplay">1</strong> of <strong id="totalPagesDisplay">1</strong></span>
+              <button id="nextPageBtn" onclick="goToNextPage()">Next</button>
+              <button id="lastPageBtn" onclick="goToLastPage()">Last</button>
+              <select id="pageSizeSelect" onchange="changePageSize()">
+                <option value="10">10 per page</option>
+                <option value="25" selected>25 per page</option>
+                <option value="50">50 per page</option>
+                <option value="100">100 per page</option>
+              </select>
             </div>
           </div>
         </div>
@@ -360,6 +566,8 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	const count = {{ .Count }};
 
 	const rawData = {{ jsonify .Details false }};
+	const sampleCount = {{ len .Details }};
+	const totalCount = {{ .Count }};
 
 	const data = [
 		{{ range .Histogram }}
@@ -537,36 +745,431 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  });
 	}
 
-	const setJSONDownloadLink = () => {
-	  var filename = "data.json";
-	  var btn = document.getElementById('dlJSON');
-	  var jsonData = JSON.stringify(rawData)
-	  var blob = new Blob([jsonData], {
-		type: 'text/json;charset=utf-8;'
-	  });
-	  var url = URL.createObjectURL(blob);
-	  btn.setAttribute("href", url);
-	  btn.setAttribute("download", filename);
+	// Table state
+	const tableData = rawData || [];
+	const hasPayloads = {{ (gt .Options.DataSamplingRate 0.0) }};
+	let pageIndex = 0;
+	let pageSize = 25;
+
+	function loadAndShowTable() {
+	  const btn = document.getElementById('showTableBtn');
+	  if (btn) {
+		btn.classList.add('is-loading');
+		btn.disabled = true;
+	  }
+
+	  try {
+		console.log('Loading data...');
+		console.log('Sample data row:', tableData.length > 0 ? tableData[0] : 'No data');
+		console.log('Capture payloads:', hasPayloads);
+
+		if (tableData.length === 0) {
+		  alert('No data found in sample. This might indicate an issue with data collection.');
+		  if (btn) {
+			btn.classList.remove('is-loading');
+			btn.disabled = false;
+		  }
+		  return;
+		}
+
+		renderTable();
+		document.getElementById('dataTableContainer').style.display = 'block';
+		if (btn) btn.style.display = 'none';
+	  } catch (error) {
+		console.error('Error loading table:', error);
+		if (btn) {
+		  btn.classList.remove('is-loading');
+		  btn.disabled = false;
+		}
+		alert('Failed to load table data: ' + error.message);
+	  }
 	}
 
-	const setCSVDownloadLink = () => {
-	  let filename = "data.csv";
-	  let btn = document.getElementById('dlCSV');
-	  let csv = Papa.unparse(rawData)
-	  let blob = new Blob([csv], {
-		type: 'text/csv;charset=utf-8;'
+	function changePageSize() {
+	  pageSize = parseInt(document.getElementById('pageSizeSelect').value);
+	  pageIndex = 0;
+	  renderTable();
+	}
+
+	function goToFirstPage() {
+	  pageIndex = 0;
+	  renderTable();
+	}
+
+	function goToPrevPage() {
+	  if (pageIndex > 0) {
+		pageIndex--;
+		renderTable();
+	  }
+	}
+
+	function goToNextPage() {
+	  const totalPages = Math.ceil(tableData.length / pageSize);
+	  if (pageIndex < totalPages - 1) {
+		pageIndex++;
+		renderTable();
+	  }
+	}
+
+	function goToLastPage() {
+	  const totalPages = Math.ceil(tableData.length / pageSize);
+	  pageIndex = totalPages - 1;
+	  renderTable();
+	}
+
+	function formatLatency(latency) {
+	  if (latency !== undefined && latency !== null) {
+		// latency is in nanoseconds
+		const ms = latency / 1000000;
+		return ms.toFixed(2) + ' ms';
+	  }
+	  return '-';
+	}
+
+	function formatTimestamp(timestamp) {
+	  if (timestamp) {
+		const d = new Date(timestamp);
+		return d.toLocaleString();
+	  }
+	  return '-';
+	}
+
+	function syntaxHighlight(json) {
+	  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+		var cls = 'json-number';
+		if (/^"/.test(match)) {
+		  if (/:$/.test(match)) {
+			cls = 'json-key';
+		  } else {
+			cls = 'json-string';
+		  }
+		} else if (/true|false/.test(match)) {
+		  cls = 'json-boolean';
+		} else if (/null/.test(match)) {
+		  cls = 'json-null';
+		}
+		return '<span class="' + cls + '">' + match + '</span>';
 	  });
-	  let url = URL.createObjectURL(blob);
-	  btn.setAttribute("href", url);
-	  btn.setAttribute("download", filename);
+	}
+
+	function decodeFeatherToTable(base64Data) {
+	  try {
+		// Check if Arrow library is loaded
+		if (typeof Arrow === 'undefined') {
+		  return '<div style="color: red; font-size: 0.7rem;">Apache Arrow library not loaded</div>';
+		}
+
+		// Decode base64
+		const binaryString = atob(base64Data);
+		const bytes = new Uint8Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+		  bytes[i] = binaryString.charCodeAt(i);
+		}
+
+		// Parse Arrow IPC format (Feather)
+		const table = Arrow.tableFromIPC(bytes);
+
+		// Convert to transposed HTML table (columns as rows)
+		let html = '<table class="table is-narrow is-striped" style="font-size: 0.75rem; margin: 0; border: 1px solid #dbdbdb; border-radius: 4px;"><tbody>';
+
+		// Limit to first 10 rows
+		const maxRows = Math.min(10, table.numRows);
+
+		// Each column becomes a row in the transposed table
+		for (let j = 0; j < table.numCols; j++) {
+		  const field = table.schema.fields[j];
+		  html += '<tr>';
+		  html += '<th style="background-color: #f5f5f5; font-weight: 600; white-space: nowrap; padding: 4px 8px;">' + field.name + '</th>';
+
+		  // Show values for this column across all rows
+		  for (let i = 0; i < maxRows; i++) {
+			const val = table.getChildAt(j).get(i);
+			const displayVal = val !== null ? String(val) : '<span style="color: #aaa;">null</span>';
+			html += '<td style="padding: 4px 8px;">' + displayVal + '</td>';
+		  }
+
+		  if (table.numRows > 10) {
+			html += '<td style="padding: 4px 8px; font-style: italic; color: #888;">...</td>';
+		  }
+
+		  html += '</tr>';
+		}
+
+		html += '</tbody></table>';
+		html += '<div style="font-size: 0.65rem; color: #888; margin-top: 4px;">' + table.numRows + ' rows × ' + table.numCols + ' cols</div>';
+
+		return html;
+	  } catch (e) {
+		return '<div style="color: red; font-size: 0.7rem;">Error parsing feather: ' + e.message + '</div>';
+	  }
+	}
+
+	function formatPayload(payload, isRequest) {
+	  if (!payload) return { link: null, html: '-' };
+
+	  try {
+		// Try to parse as JSON (protobuf messages are serialized as JSON)
+		const parsed = JSON.parse(payload);
+		const formatted = JSON.stringify(parsed, null, 2);
+
+		// Check for feather data in response (scalars_data) or request (inputs/inputs_feather)
+		let featherHtml = null;
+		let featherField = null;
+		let queryInfo = null;
+
+		if (parsed.scalars_data && typeof parsed.scalars_data === 'string') {
+		  featherField = 'scalars_data';
+		  featherHtml = decodeFeatherToTable(parsed.scalars_data);
+
+		  // Extract query metadata if available
+		  if (parsed.response_meta) {
+			queryInfo = {
+			  query_id: parsed.response_meta.query_id,
+			  environment_id: parsed.response_meta.environment_id,
+			  query_timestamp: parsed.response_meta.query_timestamp,
+			  execution_duration: parsed.response_meta.execution_duration
+			};
+		  }
+		} else if (parsed.inputs_feather && typeof parsed.inputs_feather === 'string') {
+		  featherField = 'inputs_feather';
+		  featherHtml = decodeFeatherToTable(parsed.inputs_feather);
+		} else if (parsed.inputs && typeof parsed.inputs === 'string') {
+		  featherField = 'inputs';
+		  featherHtml = decodeFeatherToTable(parsed.inputs);
+		}
+
+		// Create a compact summary for protobuf messages
+		const summary = createPayloadSummary(parsed);
+
+		// Build link HTML if we have query info
+		let linkHtml = null;
+		if (queryInfo && queryInfo.query_id && queryInfo.environment_id) {
+		  const timestamp = new Date(queryInfo.query_timestamp).getTime();
+		  const chalkUrl = 'https://chalk.ai/projects/inacjutizsafg/environments/' + queryInfo.environment_id + '/query-runs/' + queryInfo.query_id + '?ts=' + timestamp;
+		  linkHtml = '<a href="' + chalkUrl + '" target="_blank" style="color: #3273dc; font-size: 1rem;" title="View in Chalk (duration: ' + (queryInfo.execution_duration || 'N/A') + ')">🔗</a>';
+		}
+
+		// If it's very short and no feather data, just show it all with highlighting
+		if (formatted.length <= 100 && !featherHtml) {
+		  return {
+			link: linkHtml,
+			html: '<pre class="json-content" style="margin: 0; font-size: 0.75rem;">' + syntaxHighlight(formatted) + '</pre>'
+		  };
+		}
+
+		// Generate unique ID for this payload
+		const id = 'payload-' + Math.random().toString(36).substring(7);
+
+		let html = '<div>';
+
+		// If we have feather data, show table by default controlled by global toggle
+		if (featherHtml) {
+		  html += '<div class="payload-table-view" style="margin: 0; overflow-x: auto; display: block;">' + featherHtml + '</div>';
+		  html += '<pre class="payload-json-view json-content" style="margin: 0; font-size: 0.75rem; display: none;">' + syntaxHighlight(formatted) + '</pre>';
+		} else {
+		  // No feather data, show summary/expand as before
+		  html += '<div id="' + id + '-summary" style="margin: 0; display: block;">' + summary + '</div>';
+		  html += '<pre id="' + id + '-full" class="json-content" style="margin: 0; font-size: 0.75rem; display: none;">' + syntaxHighlight(formatted) + '</pre>';
+		  html += '<a href="#" onclick="togglePayload(\'' + id + '\'); return false;" style="font-size: 0.75rem; color: #3273dc;">Expand</a>';
+		}
+
+		html += '</div>';
+		return { link: linkHtml, html: html };
+	  } catch (e) {
+		// Not valid JSON, show as plain text
+		const text = payload.length <= 100 ? payload : payload.substring(0, 100) + '...';
+		return { link: null, html: text };
+	  }
+	}
+
+	function createPayloadSummary(obj, maxDepth = 2) {
+	  if (typeof obj !== 'object' || obj === null) {
+		return String(obj);
+	  }
+
+	  if (Array.isArray(obj)) {
+		return '[' + obj.length + ' items]';
+	  }
+
+	  // Create a compact representation of the object
+	  const keys = Object.keys(obj);
+	  if (keys.length === 0) return '{}';
+
+	  const parts = [];
+	  for (let i = 0; i < Math.min(keys.length, 3); i++) {
+		const key = keys[i];
+		const val = obj[key];
+
+		if (typeof val === 'object' && val !== null) {
+		  if (Array.isArray(val)) {
+			parts.push(key + ': [' + val.length + ']');
+		  } else {
+			parts.push(key + ': {...}');
+		  }
+		} else {
+		  const valStr = String(val);
+		  parts.push(key + ': ' + (valStr.length > 20 ? valStr.substring(0, 20) + '...' : valStr));
+		}
+	  }
+
+	  let result = '{ ' + parts.join(', ');
+	  if (keys.length > 3) {
+		result += ', ... +' + (keys.length - 3) + ' fields';
+	  }
+	  result += ' }';
+
+	  return result;
+	}
+
+	function togglePayload(id) {
+	  const summary = document.getElementById(id + '-summary');
+	  const full = document.getElementById(id + '-full');
+	  const link = event.target;
+
+	  if (summary.style.display === 'none') {
+		summary.style.display = 'block';
+		full.style.display = 'none';
+		link.textContent = 'Expand';
+	  } else {
+		summary.style.display = 'none';
+		full.style.display = 'block';
+		link.textContent = 'Collapse';
+	  }
+	}
+
+	function toggleAllJson() {
+	  const toggle = document.getElementById('globalJsonToggle');
+	  const isChecked = toggle.checked;
+
+	  // Find all payload table and json views
+	  const tableViews = document.querySelectorAll('.payload-table-view');
+	  const jsonViews = document.querySelectorAll('.payload-json-view');
+
+	  if (isChecked) {
+		// Show JSON
+		tableViews.forEach(el => el.style.display = 'none');
+		jsonViews.forEach(el => el.style.display = 'block');
+	  } else {
+		// Show tables
+		tableViews.forEach(el => el.style.display = 'block');
+		jsonViews.forEach(el => el.style.display = 'none');
+	  }
+	}
+
+	function renderTable() {
+	  const container = document.getElementById('dataTable');
+	  if (!container) {
+		console.error('dataTable container not found!');
+		return;
+	  }
+
+	  // Calculate pagination
+	  const startIdx = pageIndex * pageSize;
+	  const endIdx = Math.min(startIdx + pageSize, tableData.length);
+	  const pageData = tableData.slice(startIdx, endIdx);
+	  const totalPages = Math.ceil(tableData.length / pageSize);
+
+	  // Build table HTML
+	  let html = '<table><thead><tr>';
+
+	  // Headers
+	  html += '<th>Timestamp</th>';
+	  html += '<th>Latency</th>';
+	  html += '<th>Status</th>';
+	  html += '<th>Error</th>';
+	  if (hasPayloads) {
+		html += '<th>Request</th>';
+		html += '<th>Response</th>';
+	  }
+	  html += '</tr></thead><tbody>';
+
+	  // Rows
+	  pageData.forEach(row => {
+		// Format payloads once and reuse
+		let requestFormatted = null;
+		let responseFormatted = null;
+		let rowLinkIcon = '';
+
+		if (hasPayloads) {
+		  try {
+			requestFormatted = formatPayload(row.requestPayload, true);
+			responseFormatted = formatPayload(row.responsePayload, false);
+
+			// Get link from response or request
+			const linkHtml = (responseFormatted && responseFormatted.link) || (requestFormatted && requestFormatted.link);
+			if (linkHtml) {
+			  rowLinkIcon = '<span class="row-link-icon">' + linkHtml + '</span>';
+			}
+		  } catch (err) {
+			console.error('Error formatting payload:', err);
+		  }
+		}
+
+		html += '<tr>';
+		html += '<td style="position: relative;">' + rowLinkIcon + formatTimestamp(row.timestamp) + '</td>';
+		html += '<td>' + formatLatency(row.latency) + '</td>';
+		html += '<td><span class="tag ' + (row.status === 'OK' ? 'is-success' : 'is-danger') + '">' + (row.status || '-') + '</span></td>';
+		html += '<td>' + (row.error || '-') + '</td>';
+
+		if (hasPayloads) {
+		  html += '<td>' + (requestFormatted ? requestFormatted.html : '-') + '</td>';
+		  html += '<td>' + (responseFormatted ? responseFormatted.html : '-') + '</td>';
+		}
+
+		html += '</tr>';
+	  });
+
+	  html += '</tbody></table>';
+	  container.innerHTML = html;
+
+	  // Update pagination controls
+	  const currentPageEl = document.getElementById('currentPageDisplay');
+	  const totalPagesEl = document.getElementById('totalPagesDisplay');
+	  const firstBtn = document.getElementById('firstPageBtn');
+	  const prevBtn = document.getElementById('prevPageBtn');
+	  const nextBtn = document.getElementById('nextPageBtn');
+	  const lastBtn = document.getElementById('lastPageBtn');
+
+	  if (currentPageEl) currentPageEl.textContent = pageIndex + 1;
+	  if (totalPagesEl) totalPagesEl.textContent = totalPages;
+	  if (firstBtn) firstBtn.disabled = pageIndex === 0;
+	  if (prevBtn) prevBtn.disabled = pageIndex === 0;
+	  if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1;
+	  if (lastBtn) lastBtn.disabled = pageIndex >= totalPages - 1;
 	}
 
 	createBarChart();
 
 	createRPSChart();
 
-	setCSVDownloadLink();
-	setJSONDownloadLink();
+	// Auto-load first page of table data when DOM is ready
+	function initTableOnLoad() {
+	  console.log('DOM ready, initializing table...');
+	  console.log('tableData length:', tableData ? tableData.length : 'undefined');
+	  console.log('hasPayloads:', hasPayloads);
+
+	  if (tableData && tableData.length > 0) {
+		try {
+		  console.log('Rendering table...');
+		  renderTable();
+		  console.log('Table rendered successfully');
+		} catch (error) {
+		  console.error('Error rendering table:', error);
+		  console.error('Error stack:', error.stack);
+		}
+	  } else {
+		console.log('No table data to display');
+	  }
+	}
+
+	// Wait for DOM to be ready
+	if (document.readyState === 'loading') {
+	  document.addEventListener('DOMContentLoaded', initTableOnLoad);
+	} else {
+	  // DOM already loaded
+	  initTableOnLoad();
+	}
 	</script>
 	<script defer src="https://use.fontawesome.com/releases/v5.1.0/js/all.js"></script>
 </html>

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // TickValue is the tick value
@@ -30,11 +32,12 @@ type Worker struct {
 	stub grpcdynamic.Stub
 	mtd  *desc.MethodDescriptor
 
-	config   *RunConfig
-	workerID string
-	active   bool
-	stopCh   chan bool
-	ticks    <-chan TickValue
+	config         *RunConfig
+	workerID       string
+	active         bool
+	stopCh         chan bool
+	ticks          <-chan TickValue
+	sampledResults chan *sampledResult
 
 	dataProvider     DataProviderFunc
 	metadataProvider MetadataProviderFunc
@@ -77,6 +80,39 @@ func (w *Worker) Stop() {
 
 	w.active = false
 	w.stopCh <- true
+}
+
+// marshalPayload marshals a proto message to JSON bytes (defer string conversion)
+func (w *Worker) marshalPayload(msg proto.Message) []byte {
+	if msg == nil {
+		if w.config.hasLog {
+			w.config.log.Debugw("marshalPayload: message is nil", "workerID", w.workerID)
+		}
+		return nil
+	}
+
+	var jsonBytes []byte
+	var err error
+
+	// Use MarshalJSON for dynamic messages (better protobuf handling)
+	if dynMsg, ok := msg.(*dynamic.Message); ok {
+		jsonBytes, err = dynMsg.MarshalJSON()
+	} else {
+		jsonBytes, err = json.Marshal(msg)
+	}
+
+	if err != nil {
+		if w.config.hasLog {
+			w.config.log.Debugw("marshalPayload: marshal error", "workerID", w.workerID, "error", err)
+		}
+		return nil
+	}
+
+	if w.config.hasLog {
+		w.config.log.Debugw("marshalPayload: success", "workerID", w.workerID, "bytes", len(jsonBytes))
+	}
+
+	return jsonBytes
 }
 
 func (w *Worker) makeRequest(tv TickValue) error {
@@ -171,13 +207,13 @@ func (w *Worker) makeRequest(tv TickValue) error {
 	} else if w.mtd.IsServerStreaming() {
 		_ = w.makeServerStreamingRequest(&ctx, inputs[0], streamInterceptor)
 	} else {
-		_ = w.makeUnaryRequest(&ctx, reqMD, inputs[0])
+		_ = w.makeUnaryRequest(&ctx, reqMD, inputs[0], uint64(tv.reqNumber))
 	}
 
 	return err
 }
 
-func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, input *dynamic.Message) error {
+func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, input *dynamic.Message, reqNumber uint64) error {
 	var res proto.Message
 	var resErr error
 	var callOptions = []grpc.CallOption{}
@@ -185,7 +221,78 @@ func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, inpu
 		callOptions = append(callOptions, grpc.UseCompressor(gzip.Name))
 	}
 
+	// Determine if we should capture this request's payloads using probabilistic sampling
+	shouldCapture := false
+	if w.config.dataSamplingRate > 0 {
+		shouldCapture = rand.Float64() < w.config.dataSamplingRate
+	}
+
+	// Call the RPC
+	startTime := time.Now()
 	res, resErr = w.stub.InvokeRpc(*ctx, w.mtd, input, callOptions...)
+	duration := time.Since(startTime)
+
+	// If sampling, capture and send result in goroutine (don't block hot path)
+	if shouldCapture && w.sampledResults != nil {
+		go func(req, resp proto.Message, err error, dur time.Duration, ts time.Time) {
+			// Marshal request
+			var reqJSON string
+			if req != nil {
+				if reqData, marshalErr := req.(*dynamic.Message).MarshalJSON(); marshalErr == nil {
+					reqJSON = string(reqData)
+				}
+			}
+
+			// Marshal response
+			var respJSON string
+			if resp != nil {
+				if dynResp, ok := resp.(*dynamic.Message); ok {
+					if respData, marshalErr := dynResp.MarshalJSON(); marshalErr == nil {
+						respJSON = string(respData)
+					}
+				} else {
+					// Fallback to standard JSON marshal
+					if respData, marshalErr := json.Marshal(resp); marshalErr == nil {
+						respJSON = string(respData)
+					}
+				}
+			}
+
+			// Get status code
+			statusCode := "OK"
+			if err != nil {
+				if s, ok := status.FromError(err); ok {
+					statusCode = s.Code().String()
+				}
+			}
+
+			// Use defer/recover to prevent panic if channel is closed
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was closed, ignore
+					if w.config.hasLog {
+						w.config.log.Debugw("Worker: sampledResults channel closed", "workerID", w.workerID)
+					}
+				}
+			}()
+
+			w.sampledResults <- &sampledResult{
+				err:             err,
+				status:          statusCode,
+				duration:        dur,
+				timestamp:       ts,
+				requestPayload:  reqJSON,
+				responsePayload: respJSON,
+			}
+
+			if w.config.hasLog {
+				w.config.log.Debugw("Worker: Sent sampled result",
+					"workerID", w.workerID,
+					"hasReq", len(reqJSON) > 0,
+					"hasRes", len(respJSON) > 0)
+			}
+		}(input, res, resErr, duration, startTime)
+	}
 
 	if w.config.hasLog {
 		inputData, _ := input.MarshalJSON()

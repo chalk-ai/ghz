@@ -12,12 +12,16 @@ import (
 type Reporter struct {
 	config *RunConfig
 
-	results chan *callResult
-	done    chan bool
+	results        chan *callResult
+	sampledResults chan *sampledResult
+	done           chan bool
 
 	totalLatenciesSec float64
 
-	details []ResultDetail
+	details        []ResultDetail
+	sampledDetails []ResultDetail // Results with captured payloads (trace sampling)
+	lastNDetails   []ResultDetail
+	lastNIndex     int
 
 	errorDist      map[string]int
 	statusCodeDist map[string]int
@@ -74,8 +78,9 @@ type Options struct {
 	CPUs int    `json:"CPUs"`
 	Name string `json:"name,omitempty"`
 
-	SkipFirst   int  `json:"skipFirst,omitempty"`
-	CountErrors bool `json:"count-errors,omitempty"`
+	SkipFirst        int     `json:"skipFirst,omitempty"`
+	CountErrors      bool    `json:"count-errors,omitempty"`
+	DataSamplingRate float64 `json:"data-sampling-rate,omitempty"`
 }
 
 // Aggs
@@ -116,6 +121,7 @@ type Report struct {
 	LatencyDistribution []LatencyDistribution `json:"latencyDistribution"`
 	Histogram           []Bucket              `json:"histogram"`
 	Details             []ResultDetail        `json:"details"`
+	SampleDetails       []ResultDetail        `json:"-"`
 
 	Aggs  []DataPoint
 	RPS   []DataPointRPS
@@ -162,21 +168,27 @@ type Bucket struct {
 
 // ResultDetail data for each result
 type ResultDetail struct {
-	Timestamp time.Time     `json:"timestamp"`
-	Latency   time.Duration `json:"latency"`
-	Error     string        `json:"error"`
-	Status    string        `json:"status"`
+	Timestamp       time.Time     `json:"timestamp"`
+	Latency         time.Duration `json:"latency"`
+	Error           string        `json:"error"`
+	Status          string        `json:"status"`
+	RequestPayload  string        `json:"requestPayload,omitempty"`
+	ResponsePayload string        `json:"responsePayload,omitempty"`
 }
 
-func newReporter(results chan *callResult, c *RunConfig) *Reporter {
+func newReporter(results chan *callResult, sampledResults chan *sampledResult, c *RunConfig) *Reporter {
 
 	cap := min(c.n, maxResult)
 
 	return &Reporter{
-		config:  c,
-		results: results,
-		done:    make(chan bool, 1),
-		details: make([]ResultDetail, 0, cap),
+		config:         c,
+		results:        results,
+		sampledResults: sampledResults,
+		done:           make(chan bool, 1),
+		details:        make([]ResultDetail, 0, cap),
+		sampledDetails: make([]ResultDetail, 0), // No limit - grows based on sampling rate
+		lastNDetails:   make([]ResultDetail, 10000),
+		lastNIndex:     0,
 
 		statusCodeDist: make(map[string]int),
 		errorDist:      make(map[string]int),
@@ -186,6 +198,35 @@ func newReporter(results chan *callResult, c *RunConfig) *Reporter {
 // Run runs the reporter
 func (r *Reporter) Run() {
 	var skipCount int
+
+	// Start goroutine to read sampled results
+	sampledDone := make(chan bool)
+	go func() {
+		for sampleRes := range r.sampledResults {
+			errStr := ""
+			if sampleRes.err != nil {
+				errStr = sampleRes.err.Error()
+			}
+
+			detail := ResultDetail{
+				Latency:         sampleRes.duration,
+				Timestamp:       sampleRes.timestamp,
+				Status:          sampleRes.status,
+				Error:           errStr,
+				RequestPayload:  sampleRes.requestPayload,
+				ResponsePayload: sampleRes.responsePayload,
+			}
+
+			r.sampledDetails = append(r.sampledDetails, detail)
+			if r.config.hasLog {
+				r.config.log.Debugw("Reporter: Collected sampled detail",
+					"totalSampled", len(r.sampledDetails),
+					"hasReq", len(detail.RequestPayload) > 0,
+					"hasRes", len(detail.ResponsePayload) > 0)
+			}
+		}
+		sampledDone <- true
+	}()
 
 	for res := range r.results {
 		if skipCount < r.config.skipFirst {
@@ -203,15 +244,24 @@ func (r *Reporter) Run() {
 			r.errorDist[errStr]++
 		}
 
-		if len(r.details) < maxResult {
-			r.details = append(r.details, ResultDetail{
-				Latency:   res.duration,
-				Timestamp: res.timestamp,
-				Status:    res.status,
-				Error:     errStr,
-			})
+		detail := ResultDetail{
+			Latency:   res.duration,
+			Timestamp: res.timestamp,
+			Status:    res.status,
+			Error:     errStr,
 		}
+
+		if len(r.details) < maxResult {
+			r.details = append(r.details, detail)
+		}
+
+		// Capture last 10K (circular buffer)
+		r.lastNDetails[r.lastNIndex] = detail
+		r.lastNIndex = (r.lastNIndex + 1) % 10000
 	}
+
+	// Wait for sampled results to finish
+	<-sampledDone
 	r.done <- true
 }
 
@@ -268,11 +318,12 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 		DialTimeout:   r.config.dialTimeout,
 		KeepaliveTime: r.config.keepaliveTime,
 
-		Binary:      r.config.binary,
-		CPUs:        r.config.cpus,
-		Name:        r.config.name,
-		SkipFirst:   r.config.skipFirst,
-		CountErrors: r.config.countErrors,
+		Binary:           r.config.binary,
+		CPUs:             r.config.cpus,
+		Name:             r.config.name,
+		SkipFirst:        r.config.skipFirst,
+		CountErrors:      r.config.countErrors,
+		DataSamplingRate: r.config.dataSamplingRate,
 	}
 
 	_ = json.Unmarshal(r.config.data, &rep.Options.Data)
@@ -330,6 +381,14 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 		}
 
 		rep.Details = r.details
+		rep.SampleDetails = r.sampledDetails
+
+		if r.config.hasLog {
+			r.config.log.Debugw("Reporter: Finalized report",
+				"totalCount", rep.Count,
+				"detailsCount", len(rep.Details),
+				"sampleDetailsCount", len(rep.SampleDetails))
+		}
 	}
 
 	return rep

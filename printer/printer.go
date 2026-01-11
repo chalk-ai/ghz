@@ -2,23 +2,36 @@ package printer
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/alecthomas/template"
 	"github.com/chalk-ai/ghz/runner"
+	"github.com/parquet-go/parquet-go"
 )
 
 const (
 	barChar = "∎"
 )
 
+// ParquetResultDetail is the Parquet-optimized version of ResultDetail
+type ParquetResultDetail struct {
+	Timestamp       int64  `parquet:"timestamp,timestamp(millisecond)"`
+	Latency         int64  `parquet:"latency"`
+	Error           string `parquet:"error,optional,dict"`
+	Status          string `parquet:"status,dict"`
+	RequestPayload  string `parquet:"request_payload,optional"`
+	ResponsePayload string `parquet:"response_payload,optional"`
+}
+
 // ReportPrinter is used for printing the report
-type ReportPrinter struct {
+type ReportPrinter struct{
 	Out    io.Writer
 	Report *runner.Report
 }
@@ -71,8 +84,17 @@ func (rp *ReportPrinter) Print(format string) error {
 		return rp.print(string(rep))
 	case "html":
 		buf := &bytes.Buffer{}
+
+		// Create a temporary report with SampleDetails for embedding
+		reportForHTML := *rp.Report
+		reportForHTML.Details = reportForHTML.SampleDetails
+
+		// Debug: print counts
+		fmt.Fprintf(os.Stderr, "DEBUG Printer: Original Details=%d, SampleDetails=%d\n",
+			len(rp.Report.Details), len(rp.Report.SampleDetails))
+
 		templ := template.Must(template.New("tmpl").Funcs(tmplFuncMap).Parse(htmlTmpl))
-		if err := templ.Execute(buf, *rp.Report); err != nil {
+		if err := templ.Execute(buf, reportForHTML); err != nil {
 			return err
 		}
 		return rp.print(buf.String())
@@ -92,11 +114,93 @@ func (rp *ReportPrinter) print(s string) error {
 	return err
 }
 
+// toParquetFormat converts ResultDetail slice to ParquetResultDetail slice
+func toParquetFormat(details []runner.ResultDetail) []ParquetResultDetail {
+	result := make([]ParquetResultDetail, len(details))
+	for i, d := range details {
+		result[i] = ParquetResultDetail{
+			Timestamp:       d.Timestamp.UnixMilli(),
+			Latency:         d.Latency.Nanoseconds(),
+			Error:           d.Error,
+			Status:          d.Status,
+			RequestPayload:  d.RequestPayload,
+			ResponsePayload: d.ResponsePayload,
+		}
+	}
+	return result
+}
+
+// generateParquetBytes generates parquet bytes from ResultDetail slice
+func generateParquetBytes(details []runner.ResultDetail) ([]byte, error) {
+	if len(details) == 0 {
+		return []byte{}, nil
+	}
+
+	// Convert to Parquet format
+	parquetData := toParquetFormat(details)
+
+	// Create buffer
+	buf := new(bytes.Buffer)
+
+	// Create Parquet writer with Snappy compression
+	writer := parquet.NewGenericWriter[ParquetResultDetail](buf,
+		parquet.Compression(&parquet.Snappy),
+	)
+
+	// Write data
+	if _, err := writer.Write(parquetData); err != nil {
+		return nil, fmt.Errorf("failed to write parquet data: %w", err)
+	}
+
+	// Close writer
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close parquet writer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// parquetify converts ResultDetail slice to base64-encoded parquet
+func parquetify(details []runner.ResultDetail) (string, error) {
+	parquetBytes, err := generateParquetBytes(details)
+	if err != nil {
+		return "", err
+	}
+
+	// Base64 encode
+	return base64.StdEncoding.EncodeToString(parquetBytes), nil
+}
+
+// writeParquetFile writes ResultDetail slice to a parquet file
+func writeParquetFile(outputPath string, details []runner.ResultDetail) error {
+	// Determine parquet file path
+	var parquetPath string
+	if strings.HasSuffix(outputPath, ".html") {
+		parquetPath = strings.TrimSuffix(outputPath, ".html") + ".parquet"
+	} else {
+		parquetPath = outputPath + ".parquet"
+	}
+
+	// Generate parquet bytes
+	parquetBytes, err := generateParquetBytes(details)
+	if err != nil {
+		return fmt.Errorf("failed to generate parquet file: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(parquetPath, parquetBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write parquet file: %w", err)
+	}
+
+	return nil
+}
+
 var tmplFuncMap = template.FuncMap{
 	"formatMilli":      formatMilli,
 	"formatSeconds":    formatSeconds,
 	"histogram":        histogram,
 	"jsonify":          jsonify,
+	"parquetify":       parquetify,
 	"formatMark":       formatMarkMs,
 	"formatPercent":    formatPercent,
 	"formatStatusCode": formatStatusCode,

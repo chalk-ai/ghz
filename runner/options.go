@@ -135,6 +135,7 @@ type RunConfig struct {
 	skipFirst                     int
 	countErrors                   bool
 	p99_9                         bool
+	dataSamplingRate              float64
 	recvMsgFunc                   StreamRecvMsgInterceptFunc
 	streamInterceptorProviderFunc StreamInterceptorProviderFunc
 }
@@ -723,6 +724,21 @@ func WithP99_9(v bool) Option {
 	}
 }
 
+// WithDataSamplingRate sets the data sampling rate (0.0-1.0)
+// When set, this fraction of requests will have their payloads captured
+// For example, 0.01 means 1% of requests will be sampled
+// If set to 0, no payloads will be captured
+func WithDataSamplingRate(rate float64) Option {
+	return func(o *RunConfig) error {
+		if rate < 0.0 || rate > 1.0 {
+			return errors.New("data sampling rate must be between 0.0 and 1.0")
+		}
+		o.dataSamplingRate = rate
+
+		return nil
+	}
+}
+
 // WithProtoFile specified proto file path and optionally import paths
 // We will automatically add the proto file path's directory and the current directory
 //
@@ -1230,6 +1246,7 @@ func fromConfig(cfg *Config) []Option {
 		WithConcurrencyDuration(time.Duration(cfg.CMaxDuration)),
 		WithCountErrors(cfg.CountErrors),
 		WithP99_9(cfg.P99_9),
+		WithDataSamplingRate(cfg.DataSamplingRate),
 		WithDisableTemplateFuncs(cfg.DisableTemplateFuncs),
 		WithDisableTemplateData(cfg.DisableTemplateData),
 		func(o *RunConfig) error {
