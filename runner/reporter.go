@@ -12,8 +12,9 @@ import (
 type Reporter struct {
 	config *RunConfig
 
-	results chan *callResult
-	done    chan bool
+	results        chan *callResult
+	sampledResults chan *sampledResult
+	done           chan bool
 
 	totalLatenciesSec float64
 
@@ -173,20 +174,16 @@ type ResultDetail struct {
 	Status          string        `json:"status"`
 	RequestPayload  string        `json:"requestPayload,omitempty"`
 	ResponsePayload string        `json:"responsePayload,omitempty"`
-
-	// Internal fields for deferred marshaling (not exported to JSON)
-	// Store raw proto.Message objects, marshal them AFTER benchmark completes
-	requestPayloadRaw  interface{} `json:"-"`
-	responsePayloadRaw interface{} `json:"-"`
 }
 
-func newReporter(results chan *callResult, c *RunConfig) *Reporter {
+func newReporter(results chan *callResult, sampledResults chan *sampledResult, c *RunConfig) *Reporter {
 
 	cap := min(c.n, maxResult)
 
 	return &Reporter{
 		config:         c,
 		results:        results,
+		sampledResults: sampledResults,
 		done:           make(chan bool, 1),
 		details:        make([]ResultDetail, 0, cap),
 		sampledDetails: make([]ResultDetail, 0), // No limit - grows based on sampling rate
@@ -201,6 +198,35 @@ func newReporter(results chan *callResult, c *RunConfig) *Reporter {
 // Run runs the reporter
 func (r *Reporter) Run() {
 	var skipCount int
+
+	// Start goroutine to read sampled results
+	sampledDone := make(chan bool)
+	go func() {
+		for sampleRes := range r.sampledResults {
+			errStr := ""
+			if sampleRes.err != nil {
+				errStr = sampleRes.err.Error()
+			}
+
+			detail := ResultDetail{
+				Latency:         sampleRes.duration,
+				Timestamp:       sampleRes.timestamp,
+				Status:          sampleRes.status,
+				Error:           errStr,
+				RequestPayload:  sampleRes.requestPayload,
+				ResponsePayload: sampleRes.responsePayload,
+			}
+
+			r.sampledDetails = append(r.sampledDetails, detail)
+			if r.config.hasLog {
+				r.config.log.Debugw("Reporter: Collected sampled detail",
+					"totalSampled", len(r.sampledDetails),
+					"hasReq", len(detail.RequestPayload) > 0,
+					"hasRes", len(detail.ResponsePayload) > 0)
+			}
+		}
+		sampledDone <- true
+	}()
 
 	for res := range r.results {
 		if skipCount < r.config.skipFirst {
@@ -219,61 +245,24 @@ func (r *Reporter) Run() {
 		}
 
 		detail := ResultDetail{
-			Latency:            res.duration,
-			Timestamp:          res.timestamp,
-			Status:             res.status,
-			Error:              errStr,
-			requestPayloadRaw:  res.requestPayload,
-			responsePayloadRaw: res.responsePayload,
+			Latency:   res.duration,
+			Timestamp: res.timestamp,
+			Status:    res.status,
+			Error:     errStr,
 		}
 
 		if len(r.details) < maxResult {
 			r.details = append(r.details, detail)
 		}
 
-		// Collect sampled results (those with captured payloads)
-		// No limit - controlled by trace sampling rate in worker
-		if detail.requestPayloadRaw != nil || detail.responsePayloadRaw != nil {
-			r.sampledDetails = append(r.sampledDetails, detail)
-			if r.config.hasLog {
-				r.config.log.Debugw("Reporter: Collected sampled detail",
-					"totalSampled", len(r.sampledDetails),
-					"hasReq", detail.requestPayloadRaw != nil,
-					"hasRes", detail.responsePayloadRaw != nil)
-			}
-		}
-
 		// Capture last 10K (circular buffer)
 		r.lastNDetails[r.lastNIndex] = detail
 		r.lastNIndex = (r.lastNIndex + 1) % 10000
 	}
-	r.done <- true
-}
 
-// GetSampleDetails returns all sampled requests (with captured payloads)
-// Marshals the raw proto.Message objects into JSON strings
-func (r *Reporter) GetSampleDetails() []ResultDetail {
-	sample := make([]ResultDetail, len(r.sampledDetails))
-	for i, detail := range r.sampledDetails {
-		sample[i] = detail
-		// Marshal request payload if present
-		if detail.requestPayloadRaw != nil {
-			if msg, ok := detail.requestPayloadRaw.(json.Marshaler); ok {
-				if data, err := msg.MarshalJSON(); err == nil {
-					sample[i].RequestPayload = string(data)
-				}
-			}
-		}
-		// Marshal response payload if present
-		if detail.responsePayloadRaw != nil {
-			if msg, ok := detail.responsePayloadRaw.(json.Marshaler); ok {
-				if data, err := msg.MarshalJSON(); err == nil {
-					sample[i].ResponsePayload = string(data)
-				}
-			}
-		}
-	}
-	return sample
+	// Wait for sampled results to finish
+	<-sampledDone
+	r.done <- true
 }
 
 // Finalize all the gathered data into a final report
@@ -391,29 +380,8 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 			rep.Histogram = Histogram(okLats, slowestNum, fastestNum, tailPercentile, tailPercentileValue)
 		}
 
-		// Marshal raw payloads to JSON strings for full details
-		details := make([]ResultDetail, len(r.details))
-		for i, detail := range r.details {
-			details[i] = detail
-			// Marshal request payload if present
-			if detail.requestPayloadRaw != nil {
-				if msg, ok := detail.requestPayloadRaw.(json.Marshaler); ok {
-					if data, err := msg.MarshalJSON(); err == nil {
-						details[i].RequestPayload = string(data)
-					}
-				}
-			}
-			// Marshal response payload if present
-			if detail.responsePayloadRaw != nil {
-				if msg, ok := detail.responsePayloadRaw.(json.Marshaler); ok {
-					if data, err := msg.MarshalJSON(); err == nil {
-						details[i].ResponsePayload = string(data)
-					}
-				}
-			}
-		}
-		rep.Details = details
-		rep.SampleDetails = r.GetSampleDetails()
+		rep.Details = r.details
+		rep.SampleDetails = r.sampledDetails
 
 		if r.config.hasLog {
 			r.config.log.Debugw("Reporter: Finalized report",

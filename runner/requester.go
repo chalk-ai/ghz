@@ -40,6 +40,16 @@ type callResult struct {
 	responsePayload interface{} // Raw proto.Message, marshaled after benchmark
 }
 
+// sampledResult is a complete sampled result with marshaled payloads
+type sampledResult struct {
+	err             error
+	status          string
+	duration        time.Duration
+	timestamp       time.Time
+	requestPayload  string // Already marshaled to JSON
+	responsePayload string // Already marshaled to JSON
+}
+
 // Requester is used for doing the requests
 type Requester struct {
 	conns    []*grpc.ClientConn
@@ -51,9 +61,10 @@ type Requester struct {
 
 	config *RunConfig
 
-	results chan *callResult
-	stopCh  chan bool
-	start   time.Time
+	results        chan *callResult
+	sampledResults chan *sampledResult
+	stopCh         chan bool
+	start          time.Time
 
 	dataProvider     DataProviderFunc
 	metadataProvider MetadataProviderFunc
@@ -70,13 +81,14 @@ func NewRequester(c *RunConfig) (*Requester, error) {
 	var mtd *desc.MethodDescriptor
 
 	reqr := &Requester{
-		config:     c,
-		stopReason: ReasonNormalEnd,
-		results:    make(chan *callResult, min(c.c*1000, maxResult)),
-		stopCh:     make(chan bool, 1),
-		workers:    make([]*Worker, 0, c.c),
-		conns:      make([]*grpc.ClientConn, 0, c.nConns),
-		stubs:      make([]grpcdynamic.Stub, 0, c.nConns),
+		config:         c,
+		stopReason:     ReasonNormalEnd,
+		results:        make(chan *callResult, min(c.c*1000, maxResult)),
+		sampledResults: make(chan *sampledResult, min(c.c*100, maxResult/10)),
+		stopCh:         make(chan bool, 1),
+		workers:        make([]*Worker, 0, c.c),
+		conns:          make([]*grpc.ClientConn, 0, c.nConns),
+		stubs:          make([]grpcdynamic.Stub, 0, c.nConns),
 	}
 
 	if c.proto != "" {
@@ -175,7 +187,7 @@ func (b *Requester) Run() (*Report, error) {
 		b.stubs = append(b.stubs, stub)
 	}
 
-	b.reporter = newReporter(b.results, b.config)
+	b.reporter = newReporter(b.results, b.sampledResults, b.config)
 	b.lock.Unlock()
 
 	go func() {
@@ -221,6 +233,7 @@ func (b *Requester) Stop(reason StopReason) {
 // Finish finishes the test run
 func (b *Requester) Finish() *Report {
 	close(b.results)
+	close(b.sampledResults)
 	total := time.Since(b.start)
 
 	if b.config.hasLog {
@@ -344,9 +357,6 @@ func (b *Requester) newClientConn(withStatsHandler bool) (*grpc.ClientConn, erro
 		b.handlers = append(b.handlers, sh)
 
 		opts = append(opts, grpc.WithStatsHandler(sh))
-
-		// Add payload capture interceptor to capture responses before stats handler fires
-		opts = append(opts, grpc.WithUnaryInterceptor(payloadCaptureInterceptor))
 	}
 
 	if b.config.hasLog {
@@ -408,6 +418,7 @@ func (b *Requester) runWorkers(wt load.WorkerTicker, p load.Pacer) error {
 						config:                        b.config,
 						stopCh:                        make(chan bool),
 						workerID:                      wID,
+						sampledResults:                b.sampledResults,
 						dataProvider:                  b.dataProvider,
 						metadataProvider:              b.metadataProvider,
 						streamRecv:                    b.config.recvMsgFunc,

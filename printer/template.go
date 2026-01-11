@@ -36,6 +36,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
     <title>Chalk Benchmark {{ if .Name }} - {{ .Name }}{{end}}</title>
   	<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apache-arrow@15.0.0/Arrow.es2015.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
     <style>
       .json-key { color: #881391; }
@@ -43,6 +44,165 @@ duration (ms),status,error{{ range $i, $v := .Details }}
       .json-number { color: #1c00cf; }
       .json-boolean { color: #0d22ff; }
       .json-null { color: #808080; }
+
+      /* Toggle switch styles */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 42px;
+        height: 22px;
+        vertical-align: middle;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .switch-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #dbdbdb;
+        transition: .3s;
+        border-radius: 22px;
+      }
+
+      .switch-slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+      }
+
+      .switch input:checked + .switch-slider {
+        background-color: #3273dc;
+      }
+
+      .switch input:checked + .switch-slider:before {
+        transform: translateX(20px);
+      }
+
+      /* Table styles */
+      #dataTable {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: visible;
+      }
+
+      #dataTable table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: white;
+      }
+
+      #dataTable thead {
+        background-color: #f5f5f5;
+      }
+
+      #dataTable th {
+        padding: 0.75em;
+        text-align: left;
+        border-bottom: 2px solid #dbdbdb;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        background-color: #f5f5f5;
+        z-index: 10;
+      }
+
+      #dataTable td {
+        padding: 0.75em;
+        border-bottom: 1px solid #dbdbdb;
+        vertical-align: top;
+      }
+
+      #dataTable tbody tr {
+        position: relative;
+      }
+
+      #dataTable tbody tr:hover {
+        background-color: #fafafa;
+      }
+
+      #dataTable tbody tr td:first-child {
+        position: relative;
+        overflow: visible;
+      }
+
+      .row-link-icon {
+        position: absolute;
+        left: -24px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.3;
+        transition: opacity 0.2s;
+        font-size: 1.1rem;
+        z-index: 100;
+      }
+
+      #dataTable tbody tr:hover .row-link-icon {
+        opacity: 1;
+      }
+
+      .row-link-icon a {
+        text-decoration: none;
+        color: #3273dc;
+      }
+
+      /* JSON wrapping */
+      .json-content {
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        max-width: 100%;
+      }
+
+      pre.json-content {
+        font-size: 0.75rem;
+      }
+
+      /* Pagination controls */
+      .pagination-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding: 1rem;
+      }
+
+      .pagination-controls button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #dbdbdb;
+        background-color: white;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+
+      .pagination-controls button:hover:not(:disabled) {
+        background-color: #f5f5f5;
+      }
+
+      .pagination-controls button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .pagination-controls select {
+        padding: 0.5rem;
+        border: 1px solid #dbdbdb;
+        border-radius: 4px;
+      }
     </style>
 
   </head>
@@ -216,6 +376,12 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 				</p>
 			</div>
 	  </div>
+
+	  <br />
+	  <div class="container">
+	    <hr style="border: 0; height: 2px; background-color: #dbdbdb; margin: 2rem 0;" />
+	  </div>
+
 		<div class="container">
 			<div class="content">
 				<a name="rps">
@@ -328,7 +494,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
           <article class="message is-info">
             <div class="message-body">
               {{ if gt .Options.DataSamplingRate 0.0 }}
-              <p><strong>Sample:</strong> Showing {{ len .SampleDetails }} of {{ .Count }} requests ({{ printf "%.2f%%" .Options.DataSamplingRate }} sampling rate)</p>
+              <p><strong>Sample:</strong> Showing {{ len .Details }} of {{ .Count }} requests ({{ printf "%.2f%%" .Options.DataSamplingRate }} sampling rate)</p>
               <p><strong>Note:</strong> Request/response payloads included for sampled requests</p>
               {{ else }}
               <p><strong>Sample:</strong> No data sampling configured</p>
@@ -336,76 +502,34 @@ duration (ms),status,error{{ range $i, $v := .Details }}
             </div>
           </article>
 
-          <div class="field is-grouped">
-            <p class="control">
-              <button class="button is-primary" id="showTableBtn" onclick="loadAndShowTable()">
-                <span class="icon">
-                  <i class="fas fa-table"></i>
-                </span>
-                <span>Show Sample Data</span>
-              </button>
-            </p>
-            <p class="control">
-              <a class="button" id="dlJSON">
-                <span class="icon">
-                  <i class="fas fa-download"></i>
-                </span>
-                <span>JSON</span>
-              </a>
-            </p>
-            <p class="control">
-              <a class="button" id="dlCSV">
-                <span class="icon">
-                  <i class="fas fa-download"></i>
-                </span>
-                <span>CSV</span>
-              </a>
-            </p>
-          </div>
         </div>
 
-        <div id="dataTableContainer" style="display: none; margin-top: 20px;">
-          <div class="field is-grouped">
-            <p class="control">
-              <input class="input" type="text" id="filterInput" placeholder="Filter by status or error...">
-            </p>
-            <p class="control">
-              <span class="select">
-                <select id="pageSizeSelect" onchange="changePageSize()">
-                  <option value="10">10 per page</option>
-                  <option value="25" selected>25 per page</option>
-                  <option value="50">50 per page</option>
-                  <option value="100">100 per page</option>
-                </select>
-              </span>
-            </p>
+        <div id="dataTableContainer" style="margin-top: 20px;">
+          <div class="field" style="margin-bottom: 12px;">
+            <label class="switch" style="margin-right: 8px;">
+              <input type="checkbox" id="globalJsonToggle" onchange="toggleAllJson()">
+              <span class="switch-slider"></span>
+            </label>
+            <span style="font-size: 0.85rem; color: #363636;">Show JSON</span>
           </div>
 
-          <div style="overflow-x: auto;">
-            <table class="table is-striped is-fullwidth is-hoverable">
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Latency</th>
-                  <th>Status</th>
-                  <th>Error</th>
-                  {{ if (gt .Options.DataSamplingRate 0.0) }}
-                  <th>Request</th>
-                  <th>Response</th>
-                  {{ end }}
-                </tr>
-              </thead>
-              <tbody id="dataTableBody">
-                <tr><td colspan="6">Loading...</td></tr>
-              </tbody>
-            </table>
-          </div>
+          <div style="margin-left: 35px; overflow: visible; position: relative;">
+            <div id="dataTable"></div>
 
-          <nav class="pagination is-centered" role="navigation" aria-label="pagination">
-            <a class="pagination-previous" id="prevPage" onclick="prevPage()">Previous</a>
-            <a class="pagination-next" id="nextPage" onclick="nextPage()">Next</a>
-            <ul class="pagination-list" id="paginationList"></ul>
-          </nav>
+            <div class="pagination-controls">
+              <button id="firstPageBtn" onclick="goToFirstPage()">First</button>
+              <button id="prevPageBtn" onclick="goToPrevPage()">Previous</button>
+              <span>Page <strong id="currentPageDisplay">1</strong> of <strong id="totalPagesDisplay">1</strong></span>
+              <button id="nextPageBtn" onclick="goToNextPage()">Next</button>
+              <button id="lastPageBtn" onclick="goToLastPage()">Last</button>
+              <select id="pageSizeSelect" onchange="changePageSize()">
+                <option value="10">10 per page</option>
+                <option value="25" selected>25 per page</option>
+                <option value="50">50 per page</option>
+                <option value="100">100 per page</option>
+              </select>
+            </div>
+          </div>
         </div>
 			</div>
 
@@ -441,8 +565,8 @@ duration (ms),status,error{{ range $i, $v := .Details }}
   <script>
 	const count = {{ .Count }};
 
-	const rawData = {{ jsonify .SampleDetails false }};
-	const sampleCount = {{ len .SampleDetails }};
+	const rawData = {{ jsonify .Details false }};
+	const sampleCount = {{ len .Details }};
 	const totalCount = {{ .Count }};
 
 	const data = [
@@ -621,136 +745,75 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  });
 	}
 
-	function downloadJSON() {
-	  var btn = document.getElementById('dlJSON');
-	  btn.classList.add('is-loading');
-
-	  try {
-		var jsonData = JSON.stringify(rawData, null, 2);
-		var blob = new Blob([jsonData], {
-		  type: 'text/json;charset=utf-8;'
-		});
-		var url = URL.createObjectURL(blob);
-		var a = document.createElement('a');
-		a.href = url;
-		a.download = 'data.json';
-		a.click();
-		URL.revokeObjectURL(url);
-	  } catch (error) {
-		alert('Failed to download JSON: ' + error.message);
-	  } finally {
-		btn.classList.remove('is-loading');
-	  }
-	}
-
-	function downloadCSV() {
-	  let btn = document.getElementById('dlCSV');
-	  btn.classList.add('is-loading');
-
-	  try {
-		let csv = Papa.unparse(rawData);
-		let blob = new Blob([csv], {
-		  type: 'text/csv;charset=utf-8;'
-		});
-		let url = URL.createObjectURL(blob);
-		let a = document.createElement('a');
-		a.href = url;
-		a.download = 'data.csv';
-		a.click();
-		URL.revokeObjectURL(url);
-	  } catch (error) {
-		alert('Failed to download CSV: ' + error.message);
-	  } finally {
-		btn.classList.remove('is-loading');
-	  }
-	}
-
-	document.getElementById('dlJSON').addEventListener('click', downloadJSON);
-	document.getElementById('dlCSV').addEventListener('click', downloadCSV);
-
-	// Table display state
-	let tableData = [];
-	let filteredData = [];
-	let currentPage = 1;
+	// Table state
+	const tableData = rawData || [];
+	const hasPayloads = {{ (gt .Options.DataSamplingRate 0.0) }};
+	let pageIndex = 0;
 	let pageSize = 25;
 
 	function loadAndShowTable() {
 	  const btn = document.getElementById('showTableBtn');
-	  btn.classList.add('is-loading');
-	  btn.disabled = true;
+	  if (btn) {
+		btn.classList.add('is-loading');
+		btn.disabled = true;
+	  }
 
 	  try {
 		console.log('Loading data...');
-		tableData = rawData;
-		filteredData = tableData;
-
 		console.log('Sample data row:', tableData.length > 0 ? tableData[0] : 'No data');
-		console.log('Capture payloads:', {{ (gt .Options.DataSamplingRate 0.0) }});
+		console.log('Capture payloads:', hasPayloads);
 
 		if (tableData.length === 0) {
 		  alert('No data found in sample. This might indicate an issue with data collection.');
-		  btn.classList.remove('is-loading');
-		  btn.disabled = false;
+		  if (btn) {
+			btn.classList.remove('is-loading');
+			btn.disabled = false;
+		  }
 		  return;
 		}
 
 		renderTable();
 		document.getElementById('dataTableContainer').style.display = 'block';
-		btn.style.display = 'none';
-
-		// Add filter listener with debounce
-		let filterTimeout;
-		document.getElementById('filterInput').addEventListener('input', (e) => {
-		  clearTimeout(filterTimeout);
-		  filterTimeout = setTimeout(() => {
-			filterTable(e.target.value);
-		  }, 300);
-		});
+		if (btn) btn.style.display = 'none';
 	  } catch (error) {
 		console.error('Error loading table:', error);
-		btn.classList.remove('is-loading');
-		btn.disabled = false;
+		if (btn) {
+		  btn.classList.remove('is-loading');
+		  btn.disabled = false;
+		}
 		alert('Failed to load table data: ' + error.message);
 	  }
 	}
 
-	function filterTable(searchTerm) {
-	  if (!searchTerm) {
-		filteredData = tableData;
-	  } else {
-		const term = searchTerm.toLowerCase();
-		filteredData = tableData.filter(row =>
-		  (row.status && row.status.toLowerCase().includes(term)) ||
-		  (row.error && row.error.toLowerCase().includes(term))
-		);
-	  }
-	  currentPage = 1;
-	  renderTable();
-	}
-
 	function changePageSize() {
 	  pageSize = parseInt(document.getElementById('pageSizeSelect').value);
-	  currentPage = 1;
+	  pageIndex = 0;
 	  renderTable();
 	}
 
-	function prevPage() {
-	  if (currentPage > 1) {
-		currentPage--;
+	function goToFirstPage() {
+	  pageIndex = 0;
+	  renderTable();
+	}
+
+	function goToPrevPage() {
+	  if (pageIndex > 0) {
+		pageIndex--;
 		renderTable();
 	  }
 	}
 
-	function nextPage() {
-	  const totalPages = Math.ceil(filteredData.length / pageSize);
-	  if (currentPage < totalPages) {
-		currentPage++;
+	function goToNextPage() {
+	  const totalPages = Math.ceil(tableData.length / pageSize);
+	  if (pageIndex < totalPages - 1) {
+		pageIndex++;
 		renderTable();
 	  }
 	}
 
-	function goToPage(page) {
-	  currentPage = page;
+	function goToLastPage() {
+	  const totalPages = Math.ceil(tableData.length / pageSize);
+	  pageIndex = totalPages - 1;
 	  renderTable();
 	}
 
@@ -790,34 +853,133 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  });
 	}
 
-	function formatPayload(payload) {
-	  if (!payload) return '-';
+	function decodeFeatherToTable(base64Data) {
+	  try {
+		// Check if Arrow library is loaded
+		if (typeof Arrow === 'undefined') {
+		  return '<div style="color: red; font-size: 0.7rem;">Apache Arrow library not loaded</div>';
+		}
+
+		// Decode base64
+		const binaryString = atob(base64Data);
+		const bytes = new Uint8Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+		  bytes[i] = binaryString.charCodeAt(i);
+		}
+
+		// Parse Arrow IPC format (Feather)
+		const table = Arrow.tableFromIPC(bytes);
+
+		// Convert to transposed HTML table (columns as rows)
+		let html = '<table class="table is-narrow is-striped" style="font-size: 0.75rem; margin: 0; border: 1px solid #dbdbdb; border-radius: 4px;"><tbody>';
+
+		// Limit to first 10 rows
+		const maxRows = Math.min(10, table.numRows);
+
+		// Each column becomes a row in the transposed table
+		for (let j = 0; j < table.numCols; j++) {
+		  const field = table.schema.fields[j];
+		  html += '<tr>';
+		  html += '<th style="background-color: #f5f5f5; font-weight: 600; white-space: nowrap; padding: 4px 8px;">' + field.name + '</th>';
+
+		  // Show values for this column across all rows
+		  for (let i = 0; i < maxRows; i++) {
+			const val = table.getChildAt(j).get(i);
+			const displayVal = val !== null ? String(val) : '<span style="color: #aaa;">null</span>';
+			html += '<td style="padding: 4px 8px;">' + displayVal + '</td>';
+		  }
+
+		  if (table.numRows > 10) {
+			html += '<td style="padding: 4px 8px; font-style: italic; color: #888;">...</td>';
+		  }
+
+		  html += '</tr>';
+		}
+
+		html += '</tbody></table>';
+		html += '<div style="font-size: 0.65rem; color: #888; margin-top: 4px;">' + table.numRows + ' rows × ' + table.numCols + ' cols</div>';
+
+		return html;
+	  } catch (e) {
+		return '<div style="color: red; font-size: 0.7rem;">Error parsing feather: ' + e.message + '</div>';
+	  }
+	}
+
+	function formatPayload(payload, isRequest) {
+	  if (!payload) return { link: null, html: '-' };
 
 	  try {
 		// Try to parse as JSON (protobuf messages are serialized as JSON)
 		const parsed = JSON.parse(payload);
 		const formatted = JSON.stringify(parsed, null, 2);
 
+		// Check for feather data in response (scalars_data) or request (inputs/inputs_feather)
+		let featherHtml = null;
+		let featherField = null;
+		let queryInfo = null;
+
+		if (parsed.scalars_data && typeof parsed.scalars_data === 'string') {
+		  featherField = 'scalars_data';
+		  featherHtml = decodeFeatherToTable(parsed.scalars_data);
+
+		  // Extract query metadata if available
+		  if (parsed.response_meta) {
+			queryInfo = {
+			  query_id: parsed.response_meta.query_id,
+			  environment_id: parsed.response_meta.environment_id,
+			  query_timestamp: parsed.response_meta.query_timestamp,
+			  execution_duration: parsed.response_meta.execution_duration
+			};
+		  }
+		} else if (parsed.inputs_feather && typeof parsed.inputs_feather === 'string') {
+		  featherField = 'inputs_feather';
+		  featherHtml = decodeFeatherToTable(parsed.inputs_feather);
+		} else if (parsed.inputs && typeof parsed.inputs === 'string') {
+		  featherField = 'inputs';
+		  featherHtml = decodeFeatherToTable(parsed.inputs);
+		}
+
 		// Create a compact summary for protobuf messages
 		const summary = createPayloadSummary(parsed);
 
-		// If it's very short, just show it all with highlighting
-		if (formatted.length <= 100) {
-		  return '<pre style="margin: 0; max-width: 400px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;">' + syntaxHighlight(formatted) + '</pre>';
+		// Build link HTML if we have query info
+		let linkHtml = null;
+		if (queryInfo && queryInfo.query_id && queryInfo.environment_id) {
+		  const timestamp = new Date(queryInfo.query_timestamp).getTime();
+		  const chalkUrl = 'https://chalk.ai/projects/inacjutizsafg/environments/' + queryInfo.environment_id + '/query-runs/' + queryInfo.query_id + '?ts=' + timestamp;
+		  linkHtml = '<a href="' + chalkUrl + '" target="_blank" style="color: #3273dc; font-size: 1rem;" title="View in Chalk (duration: ' + (queryInfo.execution_duration || 'N/A') + ')">🔗</a>';
 		}
 
-		// Otherwise show summary with expand button
+		// If it's very short and no feather data, just show it all with highlighting
+		if (formatted.length <= 100 && !featherHtml) {
+		  return {
+			link: linkHtml,
+			html: '<pre class="json-content" style="margin: 0; font-size: 0.75rem;">' + syntaxHighlight(formatted) + '</pre>'
+		  };
+		}
+
+		// Generate unique ID for this payload
 		const id = 'payload-' + Math.random().toString(36).substring(7);
 
-		return '<div>' +
-		  '<div id="' + id + '-summary" style="margin: 0; max-width: 400px; display: block;">' + summary + '</div>' +
-		  '<pre id="' + id + '-full" style="margin: 0; max-width: 400px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; display: none;">' + syntaxHighlight(formatted) + '</pre>' +
-		  '<a href="#" onclick="togglePayload(\'' + id + '\'); return false;" style="font-size: 0.75rem; color: #3273dc;">Expand</a>' +
-		  '</div>';
+		let html = '<div>';
+
+		// If we have feather data, show table by default controlled by global toggle
+		if (featherHtml) {
+		  html += '<div class="payload-table-view" style="margin: 0; overflow-x: auto; display: block;">' + featherHtml + '</div>';
+		  html += '<pre class="payload-json-view json-content" style="margin: 0; font-size: 0.75rem; display: none;">' + syntaxHighlight(formatted) + '</pre>';
+		} else {
+		  // No feather data, show summary/expand as before
+		  html += '<div id="' + id + '-summary" style="margin: 0; display: block;">' + summary + '</div>';
+		  html += '<pre id="' + id + '-full" class="json-content" style="margin: 0; font-size: 0.75rem; display: none;">' + syntaxHighlight(formatted) + '</pre>';
+		  html += '<a href="#" onclick="togglePayload(\'' + id + '\'); return false;" style="font-size: 0.75rem; color: #3273dc;">Expand</a>';
+		}
+
+		html += '</div>';
+		return { link: linkHtml, html: html };
 	  } catch (e) {
 		// Not valid JSON, show as plain text
-		if (payload.length <= 100) return payload;
-		return payload.substring(0, 100) + '...';
+		const text = payload.length <= 100 ? payload : payload.substring(0, 100) + '...';
+		return { link: null, html: text };
 	  }
 	}
 
@@ -876,90 +1038,138 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  }
 	}
 
+	function toggleAllJson() {
+	  const toggle = document.getElementById('globalJsonToggle');
+	  const isChecked = toggle.checked;
+
+	  // Find all payload table and json views
+	  const tableViews = document.querySelectorAll('.payload-table-view');
+	  const jsonViews = document.querySelectorAll('.payload-json-view');
+
+	  if (isChecked) {
+		// Show JSON
+		tableViews.forEach(el => el.style.display = 'none');
+		jsonViews.forEach(el => el.style.display = 'block');
+	  } else {
+		// Show tables
+		tableViews.forEach(el => el.style.display = 'block');
+		jsonViews.forEach(el => el.style.display = 'none');
+	  }
+	}
+
 	function renderTable() {
-	  const tbody = document.getElementById('dataTableBody');
-	  const totalPages = Math.ceil(filteredData.length / pageSize);
-	  const startIdx = (currentPage - 1) * pageSize;
-	  const endIdx = Math.min(startIdx + pageSize, filteredData.length);
-
-	  // Clear tbody
-	  tbody.innerHTML = '';
-
-	  // Show message if no data
-	  if (filteredData.length === 0) {
-		const tr = document.createElement('tr');
-		const hasPayloads = {{ (gt .Options.DataSamplingRate 0.0) }};
-		const colspan = hasPayloads ? 6 : 4;
-		tr.innerHTML = '<td colspan="' + colspan + '" style="text-align: center; padding: 20px;">No data found</td>';
-		tbody.appendChild(tr);
+	  const container = document.getElementById('dataTable');
+	  if (!container) {
+		console.error('dataTable container not found!');
 		return;
 	  }
 
-	  // Render rows for current page
-	  for (let i = startIdx; i < endIdx; i++) {
-		const row = filteredData[i];
-		const tr = document.createElement('tr');
+	  // Calculate pagination
+	  const startIdx = pageIndex * pageSize;
+	  const endIdx = Math.min(startIdx + pageSize, tableData.length);
+	  const pageData = tableData.slice(startIdx, endIdx);
+	  const totalPages = Math.ceil(tableData.length / pageSize);
 
-		const hasPayloads = {{ (gt .Options.DataSamplingRate 0.0) }};
+	  // Build table HTML
+	  let html = '<table><thead><tr>';
 
-		if (i === startIdx && hasPayloads) {
-		  console.log('First row payloads:', {
-			request: row.requestPayload ? row.requestPayload.substring(0, 100) : 'MISSING',
-			response: row.responsePayload ? row.responsePayload.substring(0, 100) : 'MISSING'
-		  });
-		}
+	  // Headers
+	  html += '<th>Timestamp</th>';
+	  html += '<th>Latency</th>';
+	  html += '<th>Status</th>';
+	  html += '<th>Error</th>';
+	  if (hasPayloads) {
+		html += '<th>Request</th>';
+		html += '<th>Response</th>';
+	  }
+	  html += '</tr></thead><tbody>';
 
-		let html = '<td>' + formatTimestamp(row.timestamp) + '</td>' +
-		  '<td>' + formatLatency(row.latency) + '</td>' +
-		  '<td><span class="tag ' + (row.status === 'OK' ? 'is-success' : 'is-danger') + '">' + (row.status || '-') + '</span></td>' +
-		  '<td>' + (row.error || '-') + '</td>';
+	  // Rows
+	  pageData.forEach(row => {
+		// Format payloads once and reuse
+		let requestFormatted = null;
+		let responseFormatted = null;
+		let rowLinkIcon = '';
 
 		if (hasPayloads) {
-		  html += '<td style="font-size: 0.75rem;">' + formatPayload(row.requestPayload) + '</td>' +
-			'<td style="font-size: 0.75rem;">' + formatPayload(row.responsePayload) + '</td>';
+		  try {
+			requestFormatted = formatPayload(row.requestPayload, true);
+			responseFormatted = formatPayload(row.responsePayload, false);
+
+			// Get link from response or request
+			const linkHtml = (responseFormatted && responseFormatted.link) || (requestFormatted && requestFormatted.link);
+			if (linkHtml) {
+			  rowLinkIcon = '<span class="row-link-icon">' + linkHtml + '</span>';
+			}
+		  } catch (err) {
+			console.error('Error formatting payload:', err);
+		  }
 		}
 
-		tr.innerHTML = html;
-		tbody.appendChild(tr);
-	  }
+		html += '<tr>';
+		html += '<td style="position: relative;">' + rowLinkIcon + formatTimestamp(row.timestamp) + '</td>';
+		html += '<td>' + formatLatency(row.latency) + '</td>';
+		html += '<td><span class="tag ' + (row.status === 'OK' ? 'is-success' : 'is-danger') + '">' + (row.status || '-') + '</span></td>';
+		html += '<td>' + (row.error || '-') + '</td>';
 
-	  // Update pagination
-	  renderPagination(totalPages);
+		if (hasPayloads) {
+		  html += '<td>' + (requestFormatted ? requestFormatted.html : '-') + '</td>';
+		  html += '<td>' + (responseFormatted ? responseFormatted.html : '-') + '</td>';
+		}
 
-	  // Update prev/next buttons
-	  document.getElementById('prevPage').disabled = currentPage === 1;
-	  document.getElementById('nextPage').disabled = currentPage === totalPages;
-	}
+		html += '</tr>';
+	  });
 
-	function renderPagination(totalPages) {
-	  const paginationList = document.getElementById('paginationList');
-	  paginationList.innerHTML = '';
+	  html += '</tbody></table>';
+	  container.innerHTML = html;
 
-	  // Show max 7 page numbers
-	  let startPage = Math.max(1, currentPage - 3);
-	  let endPage = Math.min(totalPages, startPage + 6);
+	  // Update pagination controls
+	  const currentPageEl = document.getElementById('currentPageDisplay');
+	  const totalPagesEl = document.getElementById('totalPagesDisplay');
+	  const firstBtn = document.getElementById('firstPageBtn');
+	  const prevBtn = document.getElementById('prevPageBtn');
+	  const nextBtn = document.getElementById('nextPageBtn');
+	  const lastBtn = document.getElementById('lastPageBtn');
 
-	  if (endPage - startPage < 6) {
-		startPage = Math.max(1, endPage - 6);
-	  }
-
-	  for (let i = startPage; i <= endPage; i++) {
-		const li = document.createElement('li');
-		const a = document.createElement('a');
-		a.className = 'pagination-link' + (i === currentPage ? ' is-current' : '');
-		a.textContent = i;
-		a.onclick = () => goToPage(i);
-		li.appendChild(a);
-		paginationList.appendChild(li);
-	  }
+	  if (currentPageEl) currentPageEl.textContent = pageIndex + 1;
+	  if (totalPagesEl) totalPagesEl.textContent = totalPages;
+	  if (firstBtn) firstBtn.disabled = pageIndex === 0;
+	  if (prevBtn) prevBtn.disabled = pageIndex === 0;
+	  if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1;
+	  if (lastBtn) lastBtn.disabled = pageIndex >= totalPages - 1;
 	}
 
 	createBarChart();
 
 	createRPSChart();
 
-	setCSVDownloadLink();
-	setJSONDownloadLink();
+	// Auto-load first page of table data when DOM is ready
+	function initTableOnLoad() {
+	  console.log('DOM ready, initializing table...');
+	  console.log('tableData length:', tableData ? tableData.length : 'undefined');
+	  console.log('hasPayloads:', hasPayloads);
+
+	  if (tableData && tableData.length > 0) {
+		try {
+		  console.log('Rendering table...');
+		  renderTable();
+		  console.log('Table rendered successfully');
+		} catch (error) {
+		  console.error('Error rendering table:', error);
+		  console.error('Error stack:', error.stack);
+		}
+	  } else {
+		console.log('No table data to display');
+	  }
+	}
+
+	// Wait for DOM to be ready
+	if (document.readyState === 'loading') {
+	  document.addEventListener('DOMContentLoaded', initTableOnLoad);
+	} else {
+	  // DOM already loaded
+	  initTableOnLoad();
+	}
 	</script>
 	<script defer src="https://use.fontawesome.com/releases/v5.1.0/js/all.js"></script>
 </html>

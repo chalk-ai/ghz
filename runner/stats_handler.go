@@ -49,36 +49,11 @@ func (c *statsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 				st = s.Code().String()
 			}
 
-			// Extract raw payloads from global map if this request was sampled
-			// We store the raw proto.Message objects and marshal them AFTER the benchmark
-			var reqPayload interface{}
-			var resPayload interface{}
-
-			// Check if this request was sampled (request number in context)
-			if reqNumVal := ctx.Value(contextKey("requestNumber")); reqNumVal != nil {
-				if reqNum, ok := reqNumVal.(uint64); ok {
-					// Retrieve payloads from global map
-					sampledPayloadsMutex.RLock()
-					if pair, ok := sampledPayloads[reqNum]; ok {
-						reqPayload = pair.request
-						resPayload = pair.response
-					}
-					sampledPayloadsMutex.RUnlock()
-
-					if c.hasLog {
-						c.log.Debugw("Stats handler: Retrieved payloads", "statsID", c.id, "reqNum", reqNum,
-							"hasReq", reqPayload != nil, "hasRes", resPayload != nil)
-					}
-				}
-			}
-
 			c.results <- &callResult{
-				err:             rs.Error,
-				status:          st,
-				duration:        duration,
-				timestamp:       rs.EndTime,
-				requestPayload:  reqPayload,
-				responsePayload: resPayload,
+				err:       rs.Error,
+				status:    st,
+				duration:  duration,
+				timestamp: rs.EndTime,
 			}
 
 			if c.hasLog {

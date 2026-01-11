@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // TickValue is the tick value
@@ -27,57 +27,17 @@ type TickValue struct {
 	reqNumber uint64
 }
 
-// Context keys for storing payloads
-type contextKey string
-
-const (
-	requestPayloadKey  contextKey = "requestPayload"
-	responsePayloadKey contextKey = "responsePayload"
-	requestNumberKey   contextKey = "requestNumber"
-)
-
-// payloadPair holds request and response proto messages for a single request
-type payloadPair struct {
-	request  interface{}
-	response interface{}
-}
-
-// Global storage for sampled payloads during benchmark
-// Maps request number -> payloadPair
-var sampledPayloads = make(map[uint64]*payloadPair)
-var sampledPayloadsMutex sync.RWMutex
-
-// payloadCaptureInterceptor is a UnaryClientInterceptor that captures response payloads
-// for sampled requests BEFORE the stats handler fires.
-func payloadCaptureInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	// Call the actual RPC
-	err := invoker(ctx, method, req, reply, cc, opts...)
-
-	// After RPC completes, store response if this request was sampled
-	// This happens BEFORE the stats handler fires
-	if reqNumVal := ctx.Value(requestNumberKey); reqNumVal != nil {
-		if reqNum, ok := reqNumVal.(uint64); ok {
-			sampledPayloadsMutex.Lock()
-			if pair, ok := sampledPayloads[reqNum]; ok {
-				pair.response = reply
-			}
-			sampledPayloadsMutex.Unlock()
-		}
-	}
-
-	return err
-}
-
 // Worker is used for doing a single stream of requests in parallel
 type Worker struct {
 	stub grpcdynamic.Stub
 	mtd  *desc.MethodDescriptor
 
-	config   *RunConfig
-	workerID string
-	active   bool
-	stopCh   chan bool
-	ticks    <-chan TickValue
+	config         *RunConfig
+	workerID       string
+	active         bool
+	stopCh         chan bool
+	ticks          <-chan TickValue
+	sampledResults chan *sampledResult
 
 	dataProvider     DataProviderFunc
 	metadataProvider MetadataProviderFunc
@@ -265,21 +225,74 @@ func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, inpu
 	shouldCapture := false
 	if w.config.dataSamplingRate > 0 {
 		shouldCapture = rand.Float64() < w.config.dataSamplingRate
-
-		if shouldCapture {
-			// Store request number in context for stats handler to correlate
-			*ctx = context.WithValue(*ctx, requestNumberKey, reqNumber)
-
-			// Store request payload in global map
-			sampledPayloadsMutex.Lock()
-			sampledPayloads[reqNumber] = &payloadPair{request: input}
-			sampledPayloadsMutex.Unlock()
-		}
 	}
 
+	// Call the RPC
+	startTime := time.Now()
 	res, resErr = w.stub.InvokeRpc(*ctx, w.mtd, input, callOptions...)
+	duration := time.Since(startTime)
 
-	// Response is now captured by payloadCaptureInterceptor
+	// If sampling, capture and send result in goroutine (don't block hot path)
+	if shouldCapture && w.sampledResults != nil {
+		go func(req, resp proto.Message, err error, dur time.Duration, ts time.Time) {
+			// Marshal request
+			var reqJSON string
+			if req != nil {
+				if reqData, marshalErr := req.(*dynamic.Message).MarshalJSON(); marshalErr == nil {
+					reqJSON = string(reqData)
+				}
+			}
+
+			// Marshal response
+			var respJSON string
+			if resp != nil {
+				if dynResp, ok := resp.(*dynamic.Message); ok {
+					if respData, marshalErr := dynResp.MarshalJSON(); marshalErr == nil {
+						respJSON = string(respData)
+					}
+				} else {
+					// Fallback to standard JSON marshal
+					if respData, marshalErr := json.Marshal(resp); marshalErr == nil {
+						respJSON = string(respData)
+					}
+				}
+			}
+
+			// Get status code
+			statusCode := "OK"
+			if err != nil {
+				if s, ok := status.FromError(err); ok {
+					statusCode = s.Code().String()
+				}
+			}
+
+			// Use defer/recover to prevent panic if channel is closed
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was closed, ignore
+					if w.config.hasLog {
+						w.config.log.Debugw("Worker: sampledResults channel closed", "workerID", w.workerID)
+					}
+				}
+			}()
+
+			w.sampledResults <- &sampledResult{
+				err:             err,
+				status:          statusCode,
+				duration:        dur,
+				timestamp:       ts,
+				requestPayload:  reqJSON,
+				responsePayload: respJSON,
+			}
+
+			if w.config.hasLog {
+				w.config.log.Debugw("Worker: Sent sampled result",
+					"workerID", w.workerID,
+					"hasReq", len(reqJSON) > 0,
+					"hasRes", len(respJSON) > 0)
+			}
+		}(input, res, resErr, duration, startTime)
+	}
 
 	if w.config.hasLog {
 		inputData, _ := input.MarshalJSON()
