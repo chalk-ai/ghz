@@ -119,6 +119,7 @@ type Config struct {
 	DisableTemplateFuncs  bool              `json:"disable-template-functions" toml:"disable-template-functions" yaml:"disable-template-functions"`
 	DisableTemplateData   bool              `json:"disable-template-data" toml:"disable-template-data" yaml:"disable-template-data"`
 	P99_9                 bool              `json:"p99_9,omitempty" toml:"p99_9,omitempty" yaml:"p99_9,omitempty"`
+	CapturePayloads       bool              `json:"capture-payloads,omitempty" toml:"capture-payloads,omitempty" yaml:"capture-payloads,omitempty"`
 }
 
 func checkData(data interface{}) error {

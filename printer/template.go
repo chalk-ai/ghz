@@ -37,6 +37,13 @@ duration (ms),status,error{{ range $i, $v := .Details }}
   	<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
+    <style>
+      .json-key { color: #881391; }
+      .json-string { color: #1a1aa6; }
+      .json-number { color: #1c00cf; }
+      .json-boolean { color: #0d22ff; }
+      .json-null { color: #808080; }
+    </style>
 
   </head>
 
@@ -313,17 +320,90 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 			<br />
       <div class="container">
-        <div class="columns">
-          <div class="column is-narrow">
-            <div class="content">
-              <a name="data">
-                <h3>Data</h3>
-              </a>
+        <div class="content">
+          <a name="data">
+            <h3>Data</h3>
+          </a>
 
-              <a class="button" id="dlJSON">JSON</a>
-              <a class="button" id="dlCSV">CSV</a>
+          <article class="message is-info">
+            <div class="message-body">
+              <p><strong>Sample:</strong> Showing {{ len .SampleDetails }} of {{ .Count }} requests (first 10K)</p>
+              {{ if .Options.CapturePayloads }}
+              <p><strong>Note:</strong> Request/response payloads included for sample</p>
+              {{ end }}
             </div>
+          </article>
+
+          <div class="field is-grouped">
+            <p class="control">
+              <button class="button is-primary" id="showTableBtn" onclick="loadAndShowTable()">
+                <span class="icon">
+                  <i class="fas fa-table"></i>
+                </span>
+                <span>Show Sample Data</span>
+              </button>
+            </p>
+            <p class="control">
+              <a class="button" id="dlJSON">
+                <span class="icon">
+                  <i class="fas fa-download"></i>
+                </span>
+                <span>JSON</span>
+              </a>
+            </p>
+            <p class="control">
+              <a class="button" id="dlCSV">
+                <span class="icon">
+                  <i class="fas fa-download"></i>
+                </span>
+                <span>CSV</span>
+              </a>
+            </p>
           </div>
+        </div>
+
+        <div id="dataTableContainer" style="display: none; margin-top: 20px;">
+          <div class="field is-grouped">
+            <p class="control">
+              <input class="input" type="text" id="filterInput" placeholder="Filter by status or error...">
+            </p>
+            <p class="control">
+              <span class="select">
+                <select id="pageSizeSelect" onchange="changePageSize()">
+                  <option value="10">10 per page</option>
+                  <option value="25" selected>25 per page</option>
+                  <option value="50">50 per page</option>
+                  <option value="100">100 per page</option>
+                </select>
+              </span>
+            </p>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table class="table is-striped is-fullwidth is-hoverable">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Latency</th>
+                  <th>Status</th>
+                  <th>Error</th>
+                  {{ if .Options.CapturePayloads }}
+                  <th>Request</th>
+                  <th>Response</th>
+                  {{ end }}
+                </tr>
+              </thead>
+              <tbody id="dataTableBody">
+                <tr><td colspan="6">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <nav class="pagination is-centered" role="navigation" aria-label="pagination">
+            <a class="pagination-previous" id="prevPage" onclick="prevPage()">Previous</a>
+            <a class="pagination-next" id="nextPage" onclick="nextPage()">Next</a>
+            <ul class="pagination-list" id="paginationList"></ul>
+          </nav>
         </div>
 			</div>
 
@@ -359,7 +439,9 @@ duration (ms),status,error{{ range $i, $v := .Details }}
   <script>
 	const count = {{ .Count }};
 
-	const rawData = {{ jsonify .Details false }};
+	const rawData = {{ jsonify .SampleDetails false }};
+	const sampleCount = {{ len .SampleDetails }};
+	const totalCount = {{ .Count }};
 
 	const data = [
 		{{ range .Histogram }}
@@ -537,28 +619,337 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  });
 	}
 
-	const setJSONDownloadLink = () => {
-	  var filename = "data.json";
+	function downloadJSON() {
 	  var btn = document.getElementById('dlJSON');
-	  var jsonData = JSON.stringify(rawData)
-	  var blob = new Blob([jsonData], {
-		type: 'text/json;charset=utf-8;'
-	  });
-	  var url = URL.createObjectURL(blob);
-	  btn.setAttribute("href", url);
-	  btn.setAttribute("download", filename);
+	  btn.classList.add('is-loading');
+
+	  try {
+		var jsonData = JSON.stringify(rawData, null, 2);
+		var blob = new Blob([jsonData], {
+		  type: 'text/json;charset=utf-8;'
+		});
+		var url = URL.createObjectURL(blob);
+		var a = document.createElement('a');
+		a.href = url;
+		a.download = 'data.json';
+		a.click();
+		URL.revokeObjectURL(url);
+	  } catch (error) {
+		alert('Failed to download JSON: ' + error.message);
+	  } finally {
+		btn.classList.remove('is-loading');
+	  }
 	}
 
-	const setCSVDownloadLink = () => {
-	  let filename = "data.csv";
+	function downloadCSV() {
 	  let btn = document.getElementById('dlCSV');
-	  let csv = Papa.unparse(rawData)
-	  let blob = new Blob([csv], {
-		type: 'text/csv;charset=utf-8;'
+	  btn.classList.add('is-loading');
+
+	  try {
+		let csv = Papa.unparse(rawData);
+		let blob = new Blob([csv], {
+		  type: 'text/csv;charset=utf-8;'
+		});
+		let url = URL.createObjectURL(blob);
+		let a = document.createElement('a');
+		a.href = url;
+		a.download = 'data.csv';
+		a.click();
+		URL.revokeObjectURL(url);
+	  } catch (error) {
+		alert('Failed to download CSV: ' + error.message);
+	  } finally {
+		btn.classList.remove('is-loading');
+	  }
+	}
+
+	document.getElementById('dlJSON').addEventListener('click', downloadJSON);
+	document.getElementById('dlCSV').addEventListener('click', downloadCSV);
+
+	// Table display state
+	let tableData = [];
+	let filteredData = [];
+	let currentPage = 1;
+	let pageSize = 25;
+
+	function loadAndShowTable() {
+	  const btn = document.getElementById('showTableBtn');
+	  btn.classList.add('is-loading');
+	  btn.disabled = true;
+
+	  try {
+		console.log('Loading data...');
+		tableData = rawData;
+		filteredData = tableData;
+
+		console.log('Sample data row:', tableData.length > 0 ? tableData[0] : 'No data');
+		console.log('Capture payloads:', {{ .Options.CapturePayloads }});
+
+		if (tableData.length === 0) {
+		  alert('No data found in sample. This might indicate an issue with data collection.');
+		  btn.classList.remove('is-loading');
+		  btn.disabled = false;
+		  return;
+		}
+
+		renderTable();
+		document.getElementById('dataTableContainer').style.display = 'block';
+		btn.style.display = 'none';
+
+		// Add filter listener with debounce
+		let filterTimeout;
+		document.getElementById('filterInput').addEventListener('input', (e) => {
+		  clearTimeout(filterTimeout);
+		  filterTimeout = setTimeout(() => {
+			filterTable(e.target.value);
+		  }, 300);
+		});
+	  } catch (error) {
+		console.error('Error loading table:', error);
+		btn.classList.remove('is-loading');
+		btn.disabled = false;
+		alert('Failed to load table data: ' + error.message);
+	  }
+	}
+
+	function filterTable(searchTerm) {
+	  if (!searchTerm) {
+		filteredData = tableData;
+	  } else {
+		const term = searchTerm.toLowerCase();
+		filteredData = tableData.filter(row =>
+		  (row.status && row.status.toLowerCase().includes(term)) ||
+		  (row.error && row.error.toLowerCase().includes(term))
+		);
+	  }
+	  currentPage = 1;
+	  renderTable();
+	}
+
+	function changePageSize() {
+	  pageSize = parseInt(document.getElementById('pageSizeSelect').value);
+	  currentPage = 1;
+	  renderTable();
+	}
+
+	function prevPage() {
+	  if (currentPage > 1) {
+		currentPage--;
+		renderTable();
+	  }
+	}
+
+	function nextPage() {
+	  const totalPages = Math.ceil(filteredData.length / pageSize);
+	  if (currentPage < totalPages) {
+		currentPage++;
+		renderTable();
+	  }
+	}
+
+	function goToPage(page) {
+	  currentPage = page;
+	  renderTable();
+	}
+
+	function formatLatency(latency) {
+	  if (latency !== undefined && latency !== null) {
+		// latency is in nanoseconds
+		const ms = latency / 1000000;
+		return ms.toFixed(2) + ' ms';
+	  }
+	  return '-';
+	}
+
+	function formatTimestamp(timestamp) {
+	  if (timestamp) {
+		const d = new Date(timestamp);
+		return d.toLocaleString();
+	  }
+	  return '-';
+	}
+
+	function syntaxHighlight(json) {
+	  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+		var cls = 'json-number';
+		if (/^"/.test(match)) {
+		  if (/:$/.test(match)) {
+			cls = 'json-key';
+		  } else {
+			cls = 'json-string';
+		  }
+		} else if (/true|false/.test(match)) {
+		  cls = 'json-boolean';
+		} else if (/null/.test(match)) {
+		  cls = 'json-null';
+		}
+		return '<span class="' + cls + '">' + match + '</span>';
 	  });
-	  let url = URL.createObjectURL(blob);
-	  btn.setAttribute("href", url);
-	  btn.setAttribute("download", filename);
+	}
+
+	function formatPayload(payload) {
+	  if (!payload) return '-';
+
+	  try {
+		// Try to parse as JSON (protobuf messages are serialized as JSON)
+		const parsed = JSON.parse(payload);
+		const formatted = JSON.stringify(parsed, null, 2);
+
+		// Create a compact summary for protobuf messages
+		const summary = createPayloadSummary(parsed);
+
+		// If it's very short, just show it all with highlighting
+		if (formatted.length <= 100) {
+		  return '<pre style="margin: 0; max-width: 400px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;">' + syntaxHighlight(formatted) + '</pre>';
+		}
+
+		// Otherwise show summary with expand button
+		const id = 'payload-' + Math.random().toString(36).substring(7);
+
+		return '<div>' +
+		  '<div id="' + id + '-summary" style="margin: 0; max-width: 400px; display: block;">' + summary + '</div>' +
+		  '<pre id="' + id + '-full" style="margin: 0; max-width: 400px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; display: none;">' + syntaxHighlight(formatted) + '</pre>' +
+		  '<a href="#" onclick="togglePayload(\'' + id + '\'); return false;" style="font-size: 0.75rem; color: #3273dc;">Expand</a>' +
+		  '</div>';
+	  } catch (e) {
+		// Not valid JSON, show as plain text
+		if (payload.length <= 100) return payload;
+		return payload.substring(0, 100) + '...';
+	  }
+	}
+
+	function createPayloadSummary(obj, maxDepth = 2) {
+	  if (typeof obj !== 'object' || obj === null) {
+		return String(obj);
+	  }
+
+	  if (Array.isArray(obj)) {
+		return '[' + obj.length + ' items]';
+	  }
+
+	  // Create a compact representation of the object
+	  const keys = Object.keys(obj);
+	  if (keys.length === 0) return '{}';
+
+	  const parts = [];
+	  for (let i = 0; i < Math.min(keys.length, 3); i++) {
+		const key = keys[i];
+		const val = obj[key];
+
+		if (typeof val === 'object' && val !== null) {
+		  if (Array.isArray(val)) {
+			parts.push(key + ': [' + val.length + ']');
+		  } else {
+			parts.push(key + ': {...}');
+		  }
+		} else {
+		  const valStr = String(val);
+		  parts.push(key + ': ' + (valStr.length > 20 ? valStr.substring(0, 20) + '...' : valStr));
+		}
+	  }
+
+	  let result = '{ ' + parts.join(', ');
+	  if (keys.length > 3) {
+		result += ', ... +' + (keys.length - 3) + ' fields';
+	  }
+	  result += ' }';
+
+	  return result;
+	}
+
+	function togglePayload(id) {
+	  const summary = document.getElementById(id + '-summary');
+	  const full = document.getElementById(id + '-full');
+	  const link = event.target;
+
+	  if (summary.style.display === 'none') {
+		summary.style.display = 'block';
+		full.style.display = 'none';
+		link.textContent = 'Expand';
+	  } else {
+		summary.style.display = 'none';
+		full.style.display = 'block';
+		link.textContent = 'Collapse';
+	  }
+	}
+
+	function renderTable() {
+	  const tbody = document.getElementById('dataTableBody');
+	  const totalPages = Math.ceil(filteredData.length / pageSize);
+	  const startIdx = (currentPage - 1) * pageSize;
+	  const endIdx = Math.min(startIdx + pageSize, filteredData.length);
+
+	  // Clear tbody
+	  tbody.innerHTML = '';
+
+	  // Show message if no data
+	  if (filteredData.length === 0) {
+		const tr = document.createElement('tr');
+		const hasPayloads = {{ .Options.CapturePayloads }};
+		const colspan = hasPayloads ? 6 : 4;
+		tr.innerHTML = '<td colspan="' + colspan + '" style="text-align: center; padding: 20px;">No data found</td>';
+		tbody.appendChild(tr);
+		return;
+	  }
+
+	  // Render rows for current page
+	  for (let i = startIdx; i < endIdx; i++) {
+		const row = filteredData[i];
+		const tr = document.createElement('tr');
+
+		const hasPayloads = {{ .Options.CapturePayloads }};
+
+		if (i === startIdx && hasPayloads) {
+		  console.log('First row payloads:', {
+			request: row.requestPayload ? row.requestPayload.substring(0, 100) : 'MISSING',
+			response: row.responsePayload ? row.responsePayload.substring(0, 100) : 'MISSING'
+		  });
+		}
+
+		let html = '<td>' + formatTimestamp(row.timestamp) + '</td>' +
+		  '<td>' + formatLatency(row.latency) + '</td>' +
+		  '<td><span class="tag ' + (row.status === 'OK' ? 'is-success' : 'is-danger') + '">' + (row.status || '-') + '</span></td>' +
+		  '<td>' + (row.error || '-') + '</td>';
+
+		if (hasPayloads) {
+		  html += '<td style="font-size: 0.75rem;">' + formatPayload(row.requestPayload) + '</td>' +
+			'<td style="font-size: 0.75rem;">' + formatPayload(row.responsePayload) + '</td>';
+		}
+
+		tr.innerHTML = html;
+		tbody.appendChild(tr);
+	  }
+
+	  // Update pagination
+	  renderPagination(totalPages);
+
+	  // Update prev/next buttons
+	  document.getElementById('prevPage').disabled = currentPage === 1;
+	  document.getElementById('nextPage').disabled = currentPage === totalPages;
+	}
+
+	function renderPagination(totalPages) {
+	  const paginationList = document.getElementById('paginationList');
+	  paginationList.innerHTML = '';
+
+	  // Show max 7 page numbers
+	  let startPage = Math.max(1, currentPage - 3);
+	  let endPage = Math.min(totalPages, startPage + 6);
+
+	  if (endPage - startPage < 6) {
+		startPage = Math.max(1, endPage - 6);
+	  }
+
+	  for (let i = startPage; i <= endPage; i++) {
+		const li = document.createElement('li');
+		const a = document.createElement('a');
+		a.className = 'pagination-link' + (i === currentPage ? ' is-current' : '');
+		a.textContent = i;
+		a.onclick = () => goToPage(i);
+		li.appendChild(a);
+		paginationList.appendChild(li);
+	  }
 	}
 
 	createBarChart();

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -23,6 +25,41 @@ import (
 type TickValue struct {
 	instant   time.Time
 	reqNumber uint64
+}
+
+// Context keys for storing payloads
+type contextKey string
+
+const (
+	requestPayloadKey  contextKey = "requestPayload"
+	responsePayloadKey contextKey = "responsePayload"
+	requestIDKey       contextKey = "requestID"
+)
+
+var requestIDCounter uint64
+
+// payloadData holds request and response payloads as raw bytes
+type payloadData struct {
+	mu       sync.RWMutex
+	request  []byte
+	response []byte
+	ready    chan struct{} // signals when response is set
+}
+
+// Global payload store shared between workers and stats handlers
+var payloadStore sync.Map
+
+// Global counter for captured payloads (only capture first 10K)
+var capturedPayloadCount uint64
+
+// resetPayloadCapture resets the global payload capture state
+func resetPayloadCapture() {
+	atomic.StoreUint64(&capturedPayloadCount, 0)
+	atomic.StoreUint64(&requestIDCounter, 0)
+	payloadStore.Range(func(key, value interface{}) bool {
+		payloadStore.Delete(key)
+		return true
+	})
 }
 
 // Worker is used for doing a single stream of requests in parallel
@@ -77,6 +114,29 @@ func (w *Worker) Stop() {
 
 	w.active = false
 	w.stopCh <- true
+}
+
+// marshalPayload marshals a proto message to JSON bytes (defer string conversion)
+func (w *Worker) marshalPayload(msg proto.Message) []byte {
+	if msg == nil {
+		return nil
+	}
+
+	var jsonBytes []byte
+	var err error
+
+	// Use MarshalJSON for dynamic messages (better protobuf handling)
+	if dynMsg, ok := msg.(*dynamic.Message); ok {
+		jsonBytes, err = dynMsg.MarshalJSON()
+	} else {
+		jsonBytes, err = json.Marshal(msg)
+	}
+
+	if err != nil {
+		return nil
+	}
+
+	return jsonBytes
 }
 
 func (w *Worker) makeRequest(tv TickValue) error {
@@ -185,7 +245,41 @@ func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, inpu
 		callOptions = append(callOptions, grpc.UseCompressor(gzip.Name))
 	}
 
+	// Only capture payloads for first 10K requests
+	shouldCapture := false
+	var reqID uint64
+	if w.config.capturePayloads {
+		count := atomic.AddUint64(&capturedPayloadCount, 1)
+		shouldCapture = count <= 10000
+		if shouldCapture {
+			// Generate unique request ID and store in context
+			reqID = atomic.AddUint64(&requestIDCounter, 1)
+			*ctx = context.WithValue(*ctx, requestIDKey, reqID)
+		}
+	}
+
+	// Capture request payload if enabled and within first 10K
+	// Create payloadData early so stats handler can find it
+	var pd *payloadData
+	if shouldCapture {
+		reqBytes := w.marshalPayload(input)
+		pd = &payloadData{
+			request: reqBytes,
+			ready:   make(chan struct{}),
+		}
+		payloadStore.Store(reqID, pd)
+	}
+
 	res, resErr = w.stub.InvokeRpc(*ctx, w.mtd, input, callOptions...)
+
+	// Capture response payload if enabled and within first 10K
+	// Update the payloadData struct and signal it's ready
+	if shouldCapture && pd != nil {
+		pd.mu.Lock()
+		pd.response = w.marshalPayload(res)
+		pd.mu.Unlock()
+		close(pd.ready) // Signal that response is set
+	}
 
 	if w.config.hasLog {
 		inputData, _ := input.MarshalJSON()

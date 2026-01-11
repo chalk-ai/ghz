@@ -17,7 +17,10 @@ type Reporter struct {
 
 	totalLatenciesSec float64
 
-	details []ResultDetail
+	details        []ResultDetail
+	firstNDetails  []ResultDetail
+	lastNDetails   []ResultDetail
+	lastNIndex     int
 
 	errorDist      map[string]int
 	statusCodeDist map[string]int
@@ -74,8 +77,9 @@ type Options struct {
 	CPUs int    `json:"CPUs"`
 	Name string `json:"name,omitempty"`
 
-	SkipFirst   int  `json:"skipFirst,omitempty"`
-	CountErrors bool `json:"count-errors,omitempty"`
+	SkipFirst       int  `json:"skipFirst,omitempty"`
+	CountErrors     bool `json:"count-errors,omitempty"`
+	CapturePayloads bool `json:"capture-payloads,omitempty"`
 }
 
 // Aggs
@@ -116,6 +120,7 @@ type Report struct {
 	LatencyDistribution []LatencyDistribution `json:"latencyDistribution"`
 	Histogram           []Bucket              `json:"histogram"`
 	Details             []ResultDetail        `json:"details"`
+	SampleDetails       []ResultDetail        `json:"-"`
 
 	Aggs  []DataPoint
 	RPS   []DataPointRPS
@@ -162,10 +167,16 @@ type Bucket struct {
 
 // ResultDetail data for each result
 type ResultDetail struct {
-	Timestamp time.Time     `json:"timestamp"`
-	Latency   time.Duration `json:"latency"`
-	Error     string        `json:"error"`
-	Status    string        `json:"status"`
+	Timestamp       time.Time     `json:"timestamp"`
+	Latency         time.Duration `json:"latency"`
+	Error           string        `json:"error"`
+	Status          string        `json:"status"`
+	RequestPayload  string        `json:"requestPayload,omitempty"`
+	ResponsePayload string        `json:"responsePayload,omitempty"`
+
+	// Internal fields for deferred serialization (not exported to JSON)
+	requestPayloadBytes  []byte `json:"-"`
+	responsePayloadBytes []byte `json:"-"`
 }
 
 func newReporter(results chan *callResult, c *RunConfig) *Reporter {
@@ -173,10 +184,13 @@ func newReporter(results chan *callResult, c *RunConfig) *Reporter {
 	cap := min(c.n, maxResult)
 
 	return &Reporter{
-		config:  c,
-		results: results,
-		done:    make(chan bool, 1),
-		details: make([]ResultDetail, 0, cap),
+		config:        c,
+		results:       results,
+		done:          make(chan bool, 1),
+		details:       make([]ResultDetail, 0, cap),
+		firstNDetails: make([]ResultDetail, 0, 10000),
+		lastNDetails:  make([]ResultDetail, 10000),
+		lastNIndex:    0,
 
 		statusCodeDist: make(map[string]int),
 		errorDist:      make(map[string]int),
@@ -203,16 +217,45 @@ func (r *Reporter) Run() {
 			r.errorDist[errStr]++
 		}
 
-		if len(r.details) < maxResult {
-			r.details = append(r.details, ResultDetail{
-				Latency:   res.duration,
-				Timestamp: res.timestamp,
-				Status:    res.status,
-				Error:     errStr,
-			})
+		detail := ResultDetail{
+			Latency:              res.duration,
+			Timestamp:            res.timestamp,
+			Status:               res.status,
+			Error:                errStr,
+			requestPayloadBytes:  res.requestPayload,
+			responsePayloadBytes: res.responsePayload,
 		}
+
+		if len(r.details) < maxResult {
+			r.details = append(r.details, detail)
+		}
+
+		// Capture first 10K
+		if len(r.firstNDetails) < 10000 {
+			r.firstNDetails = append(r.firstNDetails, detail)
+		}
+
+		// Capture last 10K (circular buffer)
+		r.lastNDetails[r.lastNIndex] = detail
+		r.lastNIndex = (r.lastNIndex + 1) % 10000
 	}
 	r.done <- true
+}
+
+// GetSampleDetails returns first 10K requests (with payloads if captured)
+func (r *Reporter) GetSampleDetails() []ResultDetail {
+	// Convert payload bytes to strings for JSON export
+	sample := make([]ResultDetail, len(r.firstNDetails))
+	for i, detail := range r.firstNDetails {
+		sample[i] = detail
+		if len(detail.requestPayloadBytes) > 0 {
+			sample[i].RequestPayload = string(detail.requestPayloadBytes)
+		}
+		if len(detail.responsePayloadBytes) > 0 {
+			sample[i].ResponsePayload = string(detail.responsePayloadBytes)
+		}
+	}
+	return sample
 }
 
 // Finalize all the gathered data into a final report
@@ -268,11 +311,12 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 		DialTimeout:   r.config.dialTimeout,
 		KeepaliveTime: r.config.keepaliveTime,
 
-		Binary:      r.config.binary,
-		CPUs:        r.config.cpus,
-		Name:        r.config.name,
-		SkipFirst:   r.config.skipFirst,
-		CountErrors: r.config.countErrors,
+		Binary:          r.config.binary,
+		CPUs:            r.config.cpus,
+		Name:            r.config.name,
+		SkipFirst:       r.config.skipFirst,
+		CountErrors:     r.config.countErrors,
+		CapturePayloads: r.config.capturePayloads,
 	}
 
 	_ = json.Unmarshal(r.config.data, &rep.Options.Data)
@@ -329,7 +373,19 @@ func (r *Reporter) Finalize(stopReason StopReason, total time.Duration) *Report 
 			rep.Histogram = Histogram(okLats, slowestNum, fastestNum, tailPercentile, tailPercentileValue)
 		}
 
-		rep.Details = r.details
+		// Convert payload bytes to strings for full details
+		details := make([]ResultDetail, len(r.details))
+		for i, detail := range r.details {
+			details[i] = detail
+			if len(detail.requestPayloadBytes) > 0 {
+				details[i].RequestPayload = string(detail.requestPayloadBytes)
+			}
+			if len(detail.responsePayloadBytes) > 0 {
+				details[i].ResponsePayload = string(detail.responsePayloadBytes)
+			}
+		}
+		rep.Details = details
+		rep.SampleDetails = r.GetSampleDetails()
 	}
 
 	return rep

@@ -135,6 +135,7 @@ type RunConfig struct {
 	skipFirst                     int
 	countErrors                   bool
 	p99_9                         bool
+	capturePayloads               bool
 	recvMsgFunc                   StreamRecvMsgInterceptFunc
 	streamInterceptorProviderFunc StreamInterceptorProviderFunc
 }
@@ -718,6 +719,15 @@ func WithCountErrors(v bool) Option {
 func WithP99_9(v bool) Option {
 	return func(o *RunConfig) error {
 		o.p99_9 = v
+
+		return nil
+	}
+}
+
+// WithCapturePayloads enables capturing request and response payloads
+func WithCapturePayloads(v bool) Option {
+	return func(o *RunConfig) error {
+		o.capturePayloads = v
 
 		return nil
 	}

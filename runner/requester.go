@@ -32,10 +32,12 @@ const maxResult = 100_000_000
 
 // result of a call
 type callResult struct {
-	err       error
-	status    string
-	duration  time.Duration
-	timestamp time.Time
+	err             error
+	status          string
+	duration        time.Duration
+	timestamp       time.Time
+	requestPayload  []byte
+	responsePayload []byte
 }
 
 // Requester is used for doing the requests
@@ -155,6 +157,11 @@ func NewRequester(c *RunConfig) (*Requester, error) {
 func (b *Requester) Run() (*Report, error) {
 
 	defer close(b.stopCh)
+
+	// Reset payload capture state at start of each run
+	if b.config.capturePayloads {
+		resetPayloadCapture()
+	}
 
 	cc, err := b.openClientConns()
 	if err != nil {
