@@ -89,6 +89,10 @@ func (rp *ReportPrinter) Print(format string) error {
 		reportForHTML := *rp.Report
 		reportForHTML.Details = reportForHTML.SampleDetails
 
+		// Debug: print counts
+		fmt.Fprintf(os.Stderr, "DEBUG Printer: Original Details=%d, SampleDetails=%d\n",
+			len(rp.Report.Details), len(rp.Report.SampleDetails))
+
 		templ := template.Must(template.New("tmpl").Funcs(tmplFuncMap).Parse(htmlTmpl))
 		if err := templ.Execute(buf, reportForHTML); err != nil {
 			return err

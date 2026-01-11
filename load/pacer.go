@@ -473,7 +473,8 @@ func (sp *SegmentedPacer) Pace(elapsed time.Duration, hits uint64) (time.Duratio
 	nextHitTime := sp.timeForHit(hits + 1)
 
 	// If the next hit time is beyond our total duration, stop
-	if nextHitTime >= sp.totalDuration {
+	// Use > instead of >= to allow hits that land exactly at the boundary
+	if nextHitTime > sp.totalDuration {
 		return 0, true
 	}
 

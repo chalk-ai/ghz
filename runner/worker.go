@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -33,33 +33,39 @@ type contextKey string
 const (
 	requestPayloadKey  contextKey = "requestPayload"
 	responsePayloadKey contextKey = "responsePayload"
-	requestIDKey       contextKey = "requestID"
+	requestNumberKey   contextKey = "requestNumber"
 )
 
-var requestIDCounter uint64
-
-// payloadData holds request and response payloads as raw bytes
-type payloadData struct {
-	mu       sync.RWMutex
-	request  []byte
-	response []byte
-	ready    chan struct{} // signals when response is set
+// payloadPair holds request and response proto messages for a single request
+type payloadPair struct {
+	request  interface{}
+	response interface{}
 }
 
-// Global payload store shared between workers and stats handlers
-var payloadStore sync.Map
+// Global storage for sampled payloads during benchmark
+// Maps request number -> payloadPair
+var sampledPayloads = make(map[uint64]*payloadPair)
+var sampledPayloadsMutex sync.RWMutex
 
-// Global counter for captured payloads (only capture first 10K)
-var capturedPayloadCount uint64
+// payloadCaptureInterceptor is a UnaryClientInterceptor that captures response payloads
+// for sampled requests BEFORE the stats handler fires.
+func payloadCaptureInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	// Call the actual RPC
+	err := invoker(ctx, method, req, reply, cc, opts...)
 
-// resetPayloadCapture resets the global payload capture state
-func resetPayloadCapture() {
-	atomic.StoreUint64(&capturedPayloadCount, 0)
-	atomic.StoreUint64(&requestIDCounter, 0)
-	payloadStore.Range(func(key, value interface{}) bool {
-		payloadStore.Delete(key)
-		return true
-	})
+	// After RPC completes, store response if this request was sampled
+	// This happens BEFORE the stats handler fires
+	if reqNumVal := ctx.Value(requestNumberKey); reqNumVal != nil {
+		if reqNum, ok := reqNumVal.(uint64); ok {
+			sampledPayloadsMutex.Lock()
+			if pair, ok := sampledPayloads[reqNum]; ok {
+				pair.response = reply
+			}
+			sampledPayloadsMutex.Unlock()
+		}
+	}
+
+	return err
 }
 
 // Worker is used for doing a single stream of requests in parallel
@@ -119,6 +125,9 @@ func (w *Worker) Stop() {
 // marshalPayload marshals a proto message to JSON bytes (defer string conversion)
 func (w *Worker) marshalPayload(msg proto.Message) []byte {
 	if msg == nil {
+		if w.config.hasLog {
+			w.config.log.Debugw("marshalPayload: message is nil", "workerID", w.workerID)
+		}
 		return nil
 	}
 
@@ -133,7 +142,14 @@ func (w *Worker) marshalPayload(msg proto.Message) []byte {
 	}
 
 	if err != nil {
+		if w.config.hasLog {
+			w.config.log.Debugw("marshalPayload: marshal error", "workerID", w.workerID, "error", err)
+		}
 		return nil
+	}
+
+	if w.config.hasLog {
+		w.config.log.Debugw("marshalPayload: success", "workerID", w.workerID, "bytes", len(jsonBytes))
 	}
 
 	return jsonBytes
@@ -231,13 +247,13 @@ func (w *Worker) makeRequest(tv TickValue) error {
 	} else if w.mtd.IsServerStreaming() {
 		_ = w.makeServerStreamingRequest(&ctx, inputs[0], streamInterceptor)
 	} else {
-		_ = w.makeUnaryRequest(&ctx, reqMD, inputs[0])
+		_ = w.makeUnaryRequest(&ctx, reqMD, inputs[0], uint64(tv.reqNumber))
 	}
 
 	return err
 }
 
-func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, input *dynamic.Message) error {
+func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, input *dynamic.Message, reqNumber uint64) error {
 	var res proto.Message
 	var resErr error
 	var callOptions = []grpc.CallOption{}
@@ -245,41 +261,25 @@ func (w *Worker) makeUnaryRequest(ctx *context.Context, reqMD *metadata.MD, inpu
 		callOptions = append(callOptions, grpc.UseCompressor(gzip.Name))
 	}
 
-	// Only capture payloads for first 10K requests
+	// Determine if we should capture this request's payloads using probabilistic sampling
 	shouldCapture := false
-	var reqID uint64
-	if w.config.capturePayloads {
-		count := atomic.AddUint64(&capturedPayloadCount, 1)
-		shouldCapture = count <= 10000
-		if shouldCapture {
-			// Generate unique request ID and store in context
-			reqID = atomic.AddUint64(&requestIDCounter, 1)
-			*ctx = context.WithValue(*ctx, requestIDKey, reqID)
-		}
-	}
+	if w.config.dataSamplingRate > 0 {
+		shouldCapture = rand.Float64() < w.config.dataSamplingRate
 
-	// Capture request payload if enabled and within first 10K
-	// Create payloadData early so stats handler can find it
-	var pd *payloadData
-	if shouldCapture {
-		reqBytes := w.marshalPayload(input)
-		pd = &payloadData{
-			request: reqBytes,
-			ready:   make(chan struct{}),
+		if shouldCapture {
+			// Store request number in context for stats handler to correlate
+			*ctx = context.WithValue(*ctx, requestNumberKey, reqNumber)
+
+			// Store request payload in global map
+			sampledPayloadsMutex.Lock()
+			sampledPayloads[reqNumber] = &payloadPair{request: input}
+			sampledPayloadsMutex.Unlock()
 		}
-		payloadStore.Store(reqID, pd)
 	}
 
 	res, resErr = w.stub.InvokeRpc(*ctx, w.mtd, input, callOptions...)
 
-	// Capture response payload if enabled and within first 10K
-	// Update the payloadData struct and signal it's ready
-	if shouldCapture && pd != nil {
-		pd.mu.Lock()
-		pd.response = w.marshalPayload(res)
-		pd.mu.Unlock()
-		close(pd.ready) // Signal that response is set
-	}
+	// Response is now captured by payloadCaptureInterceptor
 
 	if w.config.hasLog {
 		inputData, _ := input.MarshalJSON()

@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"sync"
-	"time"
 
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
@@ -50,31 +49,25 @@ func (c *statsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 				st = s.Code().String()
 			}
 
-			// Extract payloads from global store if present
-			var reqPayload []byte
-			var resPayload []byte
-			if reqIDVal := ctx.Value(contextKey("requestID")); reqIDVal != nil {
-				if reqID, ok := reqIDVal.(uint64); ok {
-					if data, ok := payloadStore.Load(reqID); ok {
-						if pd, ok := data.(*payloadData); ok {
-							// Wait for response to be ready (with timeout)
-							select {
-							case <-pd.ready:
-								// Response is ready, read it safely
-								pd.mu.RLock()
-								reqPayload = pd.request
-								resPayload = pd.response
-								pd.mu.RUnlock()
-							case <-time.After(5 * time.Second):
-								// Timeout - just read what we have
-								pd.mu.RLock()
-								reqPayload = pd.request
-								resPayload = pd.response
-								pd.mu.RUnlock()
-							}
-						}
-						// Clean up the entry
-						payloadStore.Delete(reqID)
+			// Extract raw payloads from global map if this request was sampled
+			// We store the raw proto.Message objects and marshal them AFTER the benchmark
+			var reqPayload interface{}
+			var resPayload interface{}
+
+			// Check if this request was sampled (request number in context)
+			if reqNumVal := ctx.Value(contextKey("requestNumber")); reqNumVal != nil {
+				if reqNum, ok := reqNumVal.(uint64); ok {
+					// Retrieve payloads from global map
+					sampledPayloadsMutex.RLock()
+					if pair, ok := sampledPayloads[reqNum]; ok {
+						reqPayload = pair.request
+						resPayload = pair.response
+					}
+					sampledPayloadsMutex.RUnlock()
+
+					if c.hasLog {
+						c.log.Debugw("Stats handler: Retrieved payloads", "statsID", c.id, "reqNum", reqNum,
+							"hasReq", reqPayload != nil, "hasRes", resPayload != nil)
 					}
 				}
 			}

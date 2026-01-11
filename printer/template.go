@@ -327,9 +327,11 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
           <article class="message is-info">
             <div class="message-body">
-              <p><strong>Sample:</strong> Showing {{ len .SampleDetails }} of {{ .Count }} requests (first 10K)</p>
-              {{ if .Options.CapturePayloads }}
-              <p><strong>Note:</strong> Request/response payloads included for sample</p>
+              {{ if gt .Options.DataSamplingRate 0.0 }}
+              <p><strong>Sample:</strong> Showing {{ len .SampleDetails }} of {{ .Count }} requests ({{ printf "%.2f%%" .Options.DataSamplingRate }} sampling rate)</p>
+              <p><strong>Note:</strong> Request/response payloads included for sampled requests</p>
+              {{ else }}
+              <p><strong>Sample:</strong> No data sampling configured</p>
               {{ end }}
             </div>
           </article>
@@ -387,7 +389,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
                   <th>Latency</th>
                   <th>Status</th>
                   <th>Error</th>
-                  {{ if .Options.CapturePayloads }}
+                  {{ if (gt .Options.DataSamplingRate 0.0) }}
                   <th>Request</th>
                   <th>Response</th>
                   {{ end }}
@@ -683,7 +685,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		filteredData = tableData;
 
 		console.log('Sample data row:', tableData.length > 0 ? tableData[0] : 'No data');
-		console.log('Capture payloads:', {{ .Options.CapturePayloads }});
+		console.log('Capture payloads:', {{ (gt .Options.DataSamplingRate 0.0) }});
 
 		if (tableData.length === 0) {
 		  alert('No data found in sample. This might indicate an issue with data collection.');
@@ -886,7 +888,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  // Show message if no data
 	  if (filteredData.length === 0) {
 		const tr = document.createElement('tr');
-		const hasPayloads = {{ .Options.CapturePayloads }};
+		const hasPayloads = {{ (gt .Options.DataSamplingRate 0.0) }};
 		const colspan = hasPayloads ? 6 : 4;
 		tr.innerHTML = '<td colspan="' + colspan + '" style="text-align: center; padding: 20px;">No data found</td>';
 		tbody.appendChild(tr);
@@ -898,7 +900,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		const row = filteredData[i];
 		const tr = document.createElement('tr');
 
-		const hasPayloads = {{ .Options.CapturePayloads }};
+		const hasPayloads = {{ (gt .Options.DataSamplingRate 0.0) }};
 
 		if (i === startIdx && hasPayloads) {
 		  console.log('First row payloads:', {

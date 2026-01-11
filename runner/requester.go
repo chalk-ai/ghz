@@ -36,8 +36,8 @@ type callResult struct {
 	status          string
 	duration        time.Duration
 	timestamp       time.Time
-	requestPayload  []byte
-	responsePayload []byte
+	requestPayload  interface{} // Raw proto.Message, marshaled after benchmark
+	responsePayload interface{} // Raw proto.Message, marshaled after benchmark
 }
 
 // Requester is used for doing the requests
@@ -157,11 +157,6 @@ func NewRequester(c *RunConfig) (*Requester, error) {
 func (b *Requester) Run() (*Report, error) {
 
 	defer close(b.stopCh)
-
-	// Reset payload capture state at start of each run
-	if b.config.capturePayloads {
-		resetPayloadCapture()
-	}
 
 	cc, err := b.openClientConns()
 	if err != nil {
@@ -349,6 +344,9 @@ func (b *Requester) newClientConn(withStatsHandler bool) (*grpc.ClientConn, erro
 		b.handlers = append(b.handlers, sh)
 
 		opts = append(opts, grpc.WithStatsHandler(sh))
+
+		// Add payload capture interceptor to capture responses before stats handler fires
+		opts = append(opts, grpc.WithUnaryInterceptor(payloadCaptureInterceptor))
 	}
 
 	if b.config.hasLog {
