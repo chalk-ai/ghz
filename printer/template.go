@@ -36,7 +36,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
     <title>Chalk Benchmark {{ if .Name }} - {{ .Name }}{{end}}</title>
   	<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/apache-arrow@15.0.0/Arrow.es2015.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apache-arrow@18.1.0/Arrow.es2015.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
     <style>
       .json-key { color: #881391; }
