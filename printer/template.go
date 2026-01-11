@@ -901,7 +901,11 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 		return html;
 	  } catch (e) {
-		return '<div style="color: red; font-size: 0.7rem;">Error parsing feather: ' + e.message + '</div>';
+		return '<div style="color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; padding: 8px; border-radius: 4px; font-size: 0.75rem; margin: 4px 0;">' +
+		  '<strong>⚠️ Warning:</strong> Failed to parse Feather/Arrow data.<br>' +
+		  '<strong>Error:</strong> ' + e.message + '<br>' +
+		  '<strong>Note:</strong> Arrow.js may have issues with large lists. Consider using JSON format instead for better compatibility.' +
+		  '</div>';
 	  }
 	}
 
