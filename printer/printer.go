@@ -49,6 +49,7 @@ type ReportPrinter struct{
 //	html
 //	influx-summary
 //	influx-details
+//	parquet
 func (rp *ReportPrinter) Print(format string) error {
 	if format == "" {
 		format = "summary"
@@ -104,6 +105,12 @@ func (rp *ReportPrinter) Print(format string) error {
 		return rp.printInfluxDetails()
 	case "prometheus":
 		return rp.printPrometheus()
+	case "parquet":
+		// For parquet format, check if Out is a file
+		if file, ok := rp.Out.(*os.File); ok {
+			return rp.WriteParquetFile(file.Name())
+		}
+		return fmt.Errorf("parquet format requires a file output; use WriteParquetFile method instead")
 	default:
 		return fmt.Errorf("unknown format: %s", format)
 	}
@@ -176,8 +183,13 @@ func writeParquetFile(outputPath string, details []runner.ResultDetail) error {
 	// Determine parquet file path
 	var parquetPath string
 	if strings.HasSuffix(outputPath, ".html") {
+		// If it's an HTML file, replace .html with .parquet
 		parquetPath = strings.TrimSuffix(outputPath, ".html") + ".parquet"
+	} else if strings.HasSuffix(outputPath, ".parquet") {
+		// If it already ends with .parquet, use it as-is
+		parquetPath = outputPath
 	} else {
+		// Otherwise, append .parquet
 		parquetPath = outputPath + ".parquet"
 	}
 
@@ -193,6 +205,22 @@ func writeParquetFile(outputPath string, details []runner.ResultDetail) error {
 	}
 
 	return nil
+}
+
+// WriteParquetFile writes the report details to a parquet file
+func (rp *ReportPrinter) WriteParquetFile(outputPath string) error {
+	if rp.Report == nil {
+		return fmt.Errorf("report is nil")
+	}
+	return writeParquetFile(outputPath, rp.Report.Details)
+}
+
+// WriteParquetSampleFile writes the report sample details to a parquet file
+func (rp *ReportPrinter) WriteParquetSampleFile(outputPath string) error {
+	if rp.Report == nil {
+		return fmt.Errorf("report is nil")
+	}
+	return writeParquetFile(outputPath, rp.Report.SampleDetails)
 }
 
 var tmplFuncMap = template.FuncMap{
