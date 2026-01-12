@@ -494,7 +494,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
           <article class="message is-info">
             <div class="message-body">
               {{ if gt .Options.DataSamplingRate 0.0 }}
-              <p><strong>Sample:</strong> Showing {{ len .Details }} of {{ .Count }} requests ({{ printf "%.2f%%" .Options.DataSamplingRate }} sampling rate)</p>
+              <p><strong>Sample:</strong> Showing {{ len .Details }} of {{ .Count }} requests ({{ printf "%.2f%" .Options.DataSamplingRate }} sampling rate)</p>
               <p><strong>Note:</strong> Request/response payloads included for sampled requests</p>
               {{ else }}
               <p><strong>Sample:</strong> No data sampling configured</p>
