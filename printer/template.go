@@ -36,7 +36,6 @@ duration (ms),status,error{{ range $i, $v := .Details }}
     <title>Chalk Benchmark {{ if .Name }} - {{ .Name }}{{end}}</title>
   	<script src="https://cdn.jsdelivr.net/npm/papaparse@4.5.0/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/apache-arrow@18.1.0/Arrow.es2015.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.min.css" />
     <style>
       .json-key { color: #881391; }
@@ -494,7 +493,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
           <article class="message is-info">
             <div class="message-body">
               {{ if gt .Options.DataSamplingRate 0.0 }}
-              <p><strong>Sample:</strong> Showing {{ len .Details }} of {{ .Count }} requests ({{ printf "%.2f%" .Options.DataSamplingRate }} sampling rate)</p>
+              <p><strong>Sample:</strong> Showing {{ len .Details }} of {{ .Count }} requests ({{ printf "%.2f%%" .Options.DataSamplingRate }} sampling rate)</p>
               <p><strong>Note:</strong> Request/response payloads included for sampled requests</p>
               {{ else }}
               <p><strong>Sample:</strong> No data sampling configured</p>
@@ -562,7 +561,9 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
   </body>
 
-  <script>
+  <script type="module">
+	import { tableFromIPC } from 'https://cdn.jsdelivr.net/npm/@uwdata/flechette/+esm';
+
 	const count = {{ .Count }};
 
 	const rawData = {{ jsonify .Details false }};
@@ -855,11 +856,6 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 	function decodeFeatherToTable(base64Data) {
 	  try {
-		// Check if Arrow library is loaded
-		if (typeof Arrow === 'undefined') {
-		  return '<div style="color: red; font-size: 0.7rem;">Apache Arrow library not loaded</div>';
-		}
-
 		// Decode base64
 		const binaryString = atob(base64Data);
 		const bytes = new Uint8Array(binaryString.length);
@@ -867,8 +863,8 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		  bytes[i] = binaryString.charCodeAt(i);
 		}
 
-		// Parse Arrow IPC format (Feather)
-		const table = Arrow.tableFromIPC(bytes);
+		// Parse Arrow IPC format (Feather) using Flechette
+		const table = tableFromIPC(bytes);
 
 		// Convert to transposed HTML table (columns as rows)
 		let html = '<table class="table is-narrow is-striped" style="font-size: 0.75rem; margin: 0; border: 1px solid #dbdbdb; border-radius: 4px;"><tbody>';
@@ -884,7 +880,7 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 
 		  // Show values for this column across all rows
 		  for (let i = 0; i < maxRows; i++) {
-			const val = table.getChildAt(j).get(i);
+			const val = table.getChildAt(j).at(i);
 			const displayVal = val !== null ? String(val) : '<span style="color: #aaa;">null</span>';
 			html += '<td style="padding: 4px 8px;">' + displayVal + '</td>';
 		  }
@@ -904,7 +900,6 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 		return '<div style="color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; padding: 8px; border-radius: 4px; font-size: 0.75rem; margin: 4px 0;">' +
 		  '<strong>⚠️ Warning:</strong> Failed to parse Feather/Arrow data.<br>' +
 		  '<strong>Error:</strong> ' + e.message + '<br>' +
-		  '<strong>Note:</strong> Arrow.js may have issues with large lists. Consider using JSON format instead for better compatibility.' +
 		  '</div>';
 	  }
 	}
@@ -1141,6 +1136,15 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  if (prevBtn) prevBtn.disabled = pageIndex === 0;
 	  if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1;
 	  if (lastBtn) lastBtn.disabled = pageIndex >= totalPages - 1;
+
+	  // Re-apply JSON toggle state after rendering
+	  const toggle = document.getElementById('globalJsonToggle');
+	  if (toggle && toggle.checked) {
+		const tableViews = document.querySelectorAll('.payload-table-view');
+		const jsonViews = document.querySelectorAll('.payload-json-view');
+		tableViews.forEach(el => el.style.display = 'none');
+		jsonViews.forEach(el => el.style.display = 'block');
+	  }
 	}
 
 	createBarChart();
@@ -1174,6 +1178,15 @@ duration (ms),status,error{{ range $i, $v := .Details }}
 	  // DOM already loaded
 	  initTableOnLoad();
 	}
+
+	// Expose functions to global scope for inline handlers
+	window.toggleAllJson = toggleAllJson;
+	window.togglePayload = togglePayload;
+	window.goToFirstPage = goToFirstPage;
+	window.goToPrevPage = goToPrevPage;
+	window.goToNextPage = goToNextPage;
+	window.goToLastPage = goToLastPage;
+	window.changePageSize = changePageSize;
 	</script>
 	<script defer src="https://use.fontawesome.com/releases/v5.1.0/js/all.js"></script>
 </html>
