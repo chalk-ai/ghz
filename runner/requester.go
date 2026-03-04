@@ -27,8 +27,8 @@ import (
 	_ "google.golang.org/grpc/xds"
 )
 
-// Max size of the buffer of result channel.
-const maxResult = 100_000_000
+// defaultMaxResults is the default max size of the buffer of result channel.
+const defaultMaxResults = 100_000_000
 
 // result of a call
 type callResult struct {
@@ -80,11 +80,16 @@ func NewRequester(c *RunConfig) (*Requester, error) {
 	var err error
 	var mtd *desc.MethodDescriptor
 
+	maxRes := c.maxResults
+	if maxRes <= 0 {
+		maxRes = defaultMaxResults
+	}
+
 	reqr := &Requester{
 		config:         c,
 		stopReason:     ReasonNormalEnd,
-		results:        make(chan *callResult, min(c.c*1000, maxResult)),
-		sampledResults: make(chan *sampledResult, min(c.c*100, maxResult/10)),
+		results:        make(chan *callResult, min(c.c*1000, maxRes)),
+		sampledResults: make(chan *sampledResult, min(c.c*100, maxRes/10)),
 		stopCh:         make(chan bool, 1),
 		workers:        make([]*Worker, 0, c.c),
 		conns:          make([]*grpc.ClientConn, 0, c.nConns),

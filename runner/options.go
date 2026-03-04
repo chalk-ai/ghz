@@ -134,6 +134,7 @@ type RunConfig struct {
 	tags                          []byte
 	skipFirst                     int
 	countErrors                   bool
+	maxResults                    int
 	p99_9                         bool
 	dataSamplingRate              float64
 	recvMsgFunc                   StreamRecvMsgInterceptFunc
@@ -154,6 +155,7 @@ func NewConfig(call, host string, options ...Option) (*RunConfig, error) {
 		timeout:      time.Duration(20 * time.Second),
 		dialTimeout:  time.Duration(10 * time.Second),
 		cpus:         runtime.GOMAXPROCS(-1),
+		maxResults:   100_000_000,
 		zstop:        "close",
 		loadSchedule: ScheduleConst,
 	}
@@ -734,6 +736,19 @@ func WithDataSamplingRate(rate float64) Option {
 			return errors.New("data sampling rate must be between 0.0 and 1.0")
 		}
 		o.dataSamplingRate = rate
+
+		return nil
+	}
+}
+
+// WithMaxResults sets the maximum number of per-request result details to store in memory.
+// When the number of results exceeds this limit, reservoir sampling is used to maintain
+// a statistically representative sample. Default is 100,000,000.
+func WithMaxResults(n int) Option {
+	return func(o *RunConfig) error {
+		if n > 0 {
+			o.maxResults = n
+		}
 
 		return nil
 	}
