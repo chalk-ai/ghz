@@ -30,8 +30,9 @@ func TestReport_MarshalJSON(t *testing.T) {
 
 func TestReport_CorrectDetails(t *testing.T) {
 	callResultsChan := make(chan *callResult)
+	sampledResultsChan := make(chan *sampledResult)
 	config, _ := NewConfig("call", "host")
-	reporter := newReporter(callResultsChan, config)
+	reporter := newReporter(callResultsChan, sampledResultsChan, config)
 
 	go reporter.Run()
 
@@ -51,6 +52,7 @@ func TestReport_CorrectDetails(t *testing.T) {
 	callResultsChan <- &cr2
 
 	close(callResultsChan)
+	close(sampledResultsChan)
 	<-reporter.done
 	report := reporter.Finalize("stop reason", time.Second)
 
@@ -157,8 +159,9 @@ func TestHistogram_UsesP99_9Label(t *testing.T) {
 
 func TestFinalize_WithP99_9Enabled(t *testing.T) {
 	callResultsChan := make(chan *callResult)
+	sampledResultsChan := make(chan *sampledResult)
 	config, _ := NewConfig("call", "host", WithP99_9(true))
-	reporter := newReporter(callResultsChan, config)
+	reporter := newReporter(callResultsChan, sampledResultsChan, config)
 
 	go reporter.Run()
 
@@ -174,6 +177,7 @@ func TestFinalize_WithP99_9Enabled(t *testing.T) {
 	}
 
 	close(callResultsChan)
+	close(sampledResultsChan)
 	<-reporter.done
 	report := reporter.Finalize("stop reason", time.Second*2)
 
@@ -219,8 +223,9 @@ func TestFinalize_WithP99_9Enabled(t *testing.T) {
 
 func TestFinalize_WithP99_9Disabled(t *testing.T) {
 	callResultsChan := make(chan *callResult)
+	sampledResultsChan := make(chan *sampledResult)
 	config, _ := NewConfig("call", "host") // Default: p99_9 = false
-	reporter := newReporter(callResultsChan, config)
+	reporter := newReporter(callResultsChan, sampledResultsChan, config)
 
 	go reporter.Run()
 
@@ -236,6 +241,7 @@ func TestFinalize_WithP99_9Disabled(t *testing.T) {
 	}
 
 	close(callResultsChan)
+	close(sampledResultsChan)
 	<-reporter.done
 	report := reporter.Finalize("stop reason", time.Second*2)
 

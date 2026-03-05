@@ -3,6 +3,7 @@ package runner
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"slices"
 	"sort"
 	"time"
@@ -17,6 +18,9 @@ type Reporter struct {
 	done           chan bool
 
 	totalLatenciesSec float64
+
+	maxResults int
+	rng        *rand.Rand
 
 	details        []ResultDetail
 	sampledDetails []ResultDetail // Results with captured payloads (trace sampling)
@@ -178,13 +182,20 @@ type ResultDetail struct {
 
 func newReporter(results chan *callResult, sampledResults chan *sampledResult, c *RunConfig) *Reporter {
 
-	cap := min(c.n, maxResult)
+	maxRes := c.maxResults
+	if maxRes <= 0 {
+		maxRes = defaultMaxResults
+	}
+
+	cap := min(c.n, maxRes)
 
 	return &Reporter{
 		config:         c,
 		results:        results,
 		sampledResults: sampledResults,
 		done:           make(chan bool, 1),
+		maxResults:     maxRes,
+		rng:            rand.New(rand.NewSource(time.Now().UnixNano())),
 		details:        make([]ResultDetail, 0, cap),
 		sampledDetails: make([]ResultDetail, 0), // No limit - grows based on sampling rate
 		lastNDetails:   make([]ResultDetail, 10000),
@@ -251,8 +262,16 @@ func (r *Reporter) Run() {
 			Error:     errStr,
 		}
 
-		if len(r.details) < maxResult {
+		if len(r.details) < r.maxResults {
 			r.details = append(r.details, detail)
+		} else {
+			// Reservoir sampling (Algorithm R): each new item has maxResults/totalCount
+			// probability of replacing a random existing item. This maintains a uniform
+			// random sample representative of the entire run duration.
+			j := r.rng.Intn(int(r.totalCount))
+			if j < r.maxResults {
+				r.details[j] = detail
+			}
 		}
 
 		// Capture last 10K (circular buffer)
