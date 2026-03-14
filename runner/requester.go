@@ -368,6 +368,14 @@ func (b *Requester) newClientConn(withStatsHandler bool) (*grpc.ClientConn, erro
 		b.config.log.Debugw("Creating client connection", "options", opts)
 	}
 
+	if b.config.initialWindowSize > 0 {
+		opts = append(opts, grpc.WithInitialWindowSize(b.config.initialWindowSize))
+	}
+
+	if b.config.initialConnWindowSize > 0 {
+		opts = append(opts, grpc.WithInitialConnWindowSize(b.config.initialConnWindowSize))
+	}
+
 	if b.config.lbStrategy != "" {
 		grpcServiceConfig := fmt.Sprintf(`{"loadBalancingPolicy":"%s"}`, b.config.lbStrategy)
 		opts = append(opts, grpc.WithDefaultServiceConfig(grpcServiceConfig))
