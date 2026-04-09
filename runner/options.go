@@ -104,6 +104,10 @@ type RunConfig struct {
 	// lbStrategy
 	lbStrategy string
 
+	// HTTP/2 flow control window sizes
+	initialWindowSize     int32
+	initialConnWindowSize int32
+
 	// TODO consolidate these actual value fields to be implemented via provider funcs
 	// data & metadata
 	data     []byte
@@ -509,6 +513,25 @@ func WithClientLoadBalancing(strategy string) Option {
 	return func(o *RunConfig) error {
 		o.lbStrategy = strategy
 
+		return nil
+	}
+}
+
+// WithInitialWindowSize sets the initial HTTP/2 stream-level flow control window size.
+// The default is 64KB which is too small for high-QPS workloads with large responses.
+func WithInitialWindowSize(n int32) Option {
+	return func(o *RunConfig) error {
+		o.initialWindowSize = n
+		return nil
+	}
+}
+
+// WithInitialConnWindowSize sets the initial HTTP/2 connection-level flow control window size.
+// The default is 64KB. At high QPS with many concurrent streams per connection this is
+// frequently exhausted.
+func WithInitialConnWindowSize(n int32) Option {
+	return func(o *RunConfig) error {
+		o.initialConnWindowSize = n
 		return nil
 	}
 }
