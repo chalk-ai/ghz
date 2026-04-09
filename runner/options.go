@@ -519,7 +519,6 @@ func WithClientLoadBalancing(strategy string) Option {
 
 // WithInitialWindowSize sets the initial HTTP/2 stream-level flow control window size.
 // The default is 64KB which is too small for high-QPS workloads with large responses.
-// Recommended: 4MB (4*1024*1024) or higher for 10k+ QPS.
 func WithInitialWindowSize(n int32) Option {
 	return func(o *RunConfig) error {
 		o.initialWindowSize = n
@@ -529,7 +528,7 @@ func WithInitialWindowSize(n int32) Option {
 
 // WithInitialConnWindowSize sets the initial HTTP/2 connection-level flow control window size.
 // The default is 64KB. At high QPS with many concurrent streams per connection this is
-// frequently exhausted. Recommended: 32MB (32*1024*1024) or higher for 100k+ QPS.
+// frequently exhausted.
 func WithInitialConnWindowSize(n int32) Option {
 	return func(o *RunConfig) error {
 		o.initialConnWindowSize = n
